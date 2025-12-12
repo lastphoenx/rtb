@@ -1,0 +1,4 @@
+# Beispiele
+.cache/
+tmp/
+*.tmp

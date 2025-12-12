@@ -1,0 +1,28 @@
+# Runtime/Temp
+*.log
+*.tmp
+*.swp
+
+# Python (falls mal Tools dazukommen)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env/Secrets
+*.env
+
+# ABER: .env.example Dateien PUSHEN (anonymisierte Beispieldateien)
+!config/*.env.example
+
+# ABER: .server-config/example/ Dateien PUSHEN (anonymisierte Templates)
+!*.timer.example
+!*.service.example
+
+# rsync artifacts (falls jemals aufgerufen)
+rsync*.pid
+*.partial~
+
+# mac/win noise
+.DS_Store
+Thumbs.db

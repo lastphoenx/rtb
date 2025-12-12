@@ -1,0 +1,6 @@
+[Unit]
+Description=Cleanup Samba recycle bin
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cleanup-samba-recycle.sh
