@@ -6,6 +6,27 @@ Funktioniert auf Linux/Debian. Hauptvorteil: **Ressourcen-Effizienz** - Backups 
 
 ---
 
+## 📚 Table of Contents
+
+- [🏗️ Projekt-Übersicht](#️-projekt-übersicht-secure-nas--backup-ecosystem)
+  - [📦 Repositories](#-repositories)
+  - [🎯 Die Entstehungsgeschichte](#-die-entstehungsgeschichte)
+  - [🔗 Zusammenspiel der Komponenten](#-zusammenspiel-der-komponenten)
+- [🛠️ Technologie-Stack](#️-technologie-stack)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Features](#features)
+- [Examples](#examples)
+- [How It Works](#how-it-works)
+- [Integration with Safety Gate](#integration-with-safety-gate)
+- [systemd Integration](#systemd-integration)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
 # 🏗️ Projekt-Übersicht: Secure NAS & Backup Ecosystem
 
 ## 📦 Repositories
