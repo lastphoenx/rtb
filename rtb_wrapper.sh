@@ -122,7 +122,7 @@ PCLOUD_ENABLE=${PCLOUD_ENABLE:-1}
 
 if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
   log "[start] pCloud-Sync (automatisch nach RTB)"
-  if bash "$PCLOUD_WRAPPER"; then
+  if BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER"; then
     log "[done] pCloud-Sync erfolgreich"
     log "[done] Backup-Pipeline komplett ✓"
   else
