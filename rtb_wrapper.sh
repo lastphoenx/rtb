@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ===== Konfig =====
-SRC=${SRC:-/srv/nas/test}
+SRC=${SRC:-/srv/nas}
 RTB=${RTB:-/mnt/backup/rtb_nas}
 RTB_SCRIPT=${RTB_SCRIPT:-/opt/apps/rtb/rsync_tmbackup.sh}
 RTB_EXCL=${RTB_EXCL:-/opt/apps/rtb/excludes.txt}
