@@ -23,7 +23,12 @@ SAFETY_GATE_STRICT=${SAFETY_GATE_STRICT:-1}  # 1 = blockiert auch bei YELLOW (em
 LOCKFILE=${LOCKFILE:-/run/backup_pipeline.lock}
 WAIT_SEC=${WAIT_SEC:-7200}  # max. 2h auf Lock warten
 
-log(){ printf "%s %s\n" "$(date '+%F %T')" "$*" >&2; }
+# ========= Logging =========
+RTB_LOG=${RTB_LOG:-/var/log/backup/rtb_wrapper.log}
+mkdir -p "$(dirname "$RTB_LOG")"
+exec > >(tee -a "$RTB_LOG") 2>&1
+
+log(){ printf "%s %s\n" "$(date '+%F %T')" "$*"; }
 
 # ===== Lock holen =====
 exec 9>"$LOCKFILE"
