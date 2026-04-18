@@ -46,7 +46,7 @@ Dieses Projekt besteht aus mehreren zusammenhängenden Komponenten:
 
 Die Reise begann mit Frustration: **QNAP** (TS-453 Pro, TS-473A, TS-251+) und **LaCie 5big NAS Pro** waren zwar funktional, aber sobald man mehr als die Standard-Features wollte, wurde es zum Gefrickel. Autostart-Scripts, limitierte Shell-Umgebungen, fehlende Packages - man kam einfach nicht ans Ziel.
 
-**Die Lösung:** Wechsel auf ein vollwertiges **Debian-System**. Hardware: **Raspberry Pi 5** mit **Radxa Penta SATA HAT** (5x 2.5" SATA-SSDs), Samba-Share mit Recycling-Bin. Volle Kontrolle, Standard-Tools, keine Vendor-Lock-ins.
+**Die Lösung:** Wechsel auf ein vollwertiges **Debian-System**. Hardware: **Raspberry Pi 5** mit **Radxa Penta SATA HAT** (5x 2.5" SATA-SSDs), Samba-Share mit Recycling-Bin. Volle Kontrolle, Standard-Tools, keine Vendor-Lock-ins. Ein nicht unwichtiger Nebeneffekt: Ein QNAP mit 4 Festplatten zieht im Dauerbetrieb ~30–50 W, das LaCie ähnlich. Der Raspberry Pi 5 mit 5x 2.5" SSDs kommt auf ca. 10–15 W — **50–80% weniger Stromkosten** bei identischer Funktionalität.
 
 ### Der Weg zur vollautomatisierten Backup-Pipeline
 
