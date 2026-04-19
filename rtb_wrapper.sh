@@ -24,7 +24,7 @@ if [[ "${1:-}" == "--force" ]]; then FORCE=1; shift; fi
 if [[ "${1:-}" == "--check-only" ]]; then
   LAST="$(readlink -f "${RTB}/latest" 2>/dev/null || true)"
   if [[ -z "$LAST" || ! -d "$LAST" ]]; then
-    echo "no_baseline"
+    echo "[RTB Wrapper] no_baseline → No previous backup snapshot found (first run needed)"
     exit 0
   fi
   set +e
@@ -36,14 +36,14 @@ if [[ "${1:-}" == "--check-only" ]]; then
   rsync_rc=$?
   set -e
   if [[ $rsync_rc -ne 0 ]]; then
-    echo "error"
+    echo "[RTB Wrapper] error → rsync check failed (exit code: $rsync_rc)"
     exit 2
   fi
   if echo "$check_out" | grep -qE '^[<>ch*]'; then
-    echo "changes_detected"
+    echo "[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)"
     exit 1
   else
-    echo "no_changes"
+    echo "[RTB Wrapper] no_changes → No backup needed (source == latest snapshot)"
     exit 0
   fi
 fi
