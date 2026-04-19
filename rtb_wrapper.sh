@@ -14,6 +14,40 @@ NO_CHANGE_EXIT0=${NO_CHANGE_EXIT0:-1}
 FORCE=0
 if [[ "${1:-}" == "--force" ]]; then FORCE=1; shift; fi
 
+# ===== CHECK-ONLY mode ===============================================
+# Read-only live dry-run: no lock, no log write, no backup triggered.
+# Used by aggregate_status.sh to get current change-detection result.
+#   exit 0 + "no_changes"        → source == latest snapshot
+#   exit 1 + "changes_detected"  → new/changed/deleted files found
+#   exit 0 + "no_baseline"       → no latest snapshot yet (first run)
+#   exit 2 + "error"             → rsync failed
+if [[ "${1:-}" == "--check-only" ]]; then
+  LAST="$(readlink -f "${RTB}/latest" 2>/dev/null || true)"
+  if [[ -z "$LAST" || ! -d "$LAST" ]]; then
+    echo "no_baseline"
+    exit 0
+  fi
+  set +e
+  check_out=$(rsync -ni --delete \
+    --links --hard-links --one-file-system --times --recursive \
+    --perms --owner --group \
+    --exclude-from "${RTB_EXCL}" \
+    "${SRC}/" "$LAST/" 2>/dev/null)
+  rsync_rc=$?
+  set -e
+  if [[ $rsync_rc -ne 0 ]]; then
+    echo "error"
+    exit 2
+  fi
+  if echo "$check_out" | grep -qE '^[<>ch*]'; then
+    echo "changes_detected"
+    exit 1
+  else
+    echo "no_changes"
+    exit 0
+  fi
+fi
+
 # === EntropyWatcher Safety-Gate ===
 ENTROPYWATCHER_ENABLE=${ENTROPYWATCHER_ENABLE:-1}
 ENTROPYWATCHER_SAFETY_GATE=${ENTROPYWATCHER_SAFETY_GATE:-/opt/apps/entropywatcher/main/safety_gate.sh}
