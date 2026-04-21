@@ -371,6 +371,26 @@ An option to disable the default behaviour to purge old backups when out of spac
 
 The script creates a backup in a regular directory so you can simply copy the files back to the original directory. You could do that with something like `rsync -aP /path/to/last/backup/ /path/to/restore/to/`. Consider using the `--dry-run` option to check what exactly is going to be copied. Use `--delete` if you also want to delete files that exist in the destination but not in the backup (obviously extra care must be taken when using this option).
 
+## Advanced Topics
+
+### Deep Dive: Retention & Dedupe Architecture
+
+For a comprehensive technical analysis of retention mechanisms, hardlink-based deduplication, and pCloud integration:
+
+→ **[Backup Retention Deep Dive](../pcloud-tools/docs/BACKUP_RETENTION_DEEP_DIVE.md)**
+
+**Topics covered:**
+- Local retention strategies (time-based expiration + DISK FULL emergency handling)
+- Linux hardlink mechanics (Inode-level deduplication)
+- pCloud anchor promotion (move() vs. copyfile() - critical distinction)
+- Cross-repo synchronization & stub-rewrite mechanisms
+- Performance analysis & optimization recommendations
+
+**Recommended for:**
+- System administrators customizing retention policies
+- Developers integrating with the backup pipeline
+- Troubleshooting retention-related issues
+
 ## Extensions
 
 * [rtb-wrapper](https://github.com/thomas-mc-work/rtb-wrapper): Allows creating backup profiles in config files. Handles both backup and restore operations.
