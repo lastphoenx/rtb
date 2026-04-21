@@ -132,6 +132,8 @@ Mit funktionierender lokaler Backup- und Security-Pipeline kam die Frage: **Wie 
 
 * **Delta Detection** - Prüft vor Backup-Ausführung ob Änderungen vorliegen (`rsync --dry-run`)
 
+* **Check-Only Mode** - Lightweight Status-Prüfung ohne Lock/Log für externe Monitoring-Tools (neu in April 2026)
+
 * **Safety Gate Integration** - Ruft EntropyWatcher ab: GREEN = Backup erlaubt, RED = blockiert
 
 * **Resource Efficiency** - Überspringt Backups wenn keine Änderungen (keine unnötigen rsync-Läufe)
@@ -146,12 +148,86 @@ Mit funktionierender lokaler Backup- und Security-Pipeline kam die Frage: **Wie 
 # Manual run
 bash rtb_wrapper.sh
 
+# Force backup (ignore deltas & safety gate)
+bash rtb_wrapper.sh --force
+
+# Check-only mode (read-only dry-run for monitoring)
+bash rtb_wrapper.sh --check-only
+# → exit 0 + "no_changes"        = Source gleich letztem Snapshot
+# → exit 1 + "changes_detected"  = Backup nötig
+# → exit 0 + "no_baseline"       = Noch kein Snapshot (erster Lauf)
+# → exit 2 + "error"             = rsync-Check fehlerhaft
+
 # Automated via systemd timer
 sudo systemctl enable --now rtb-backup.timer
 systemctl list-timers | grep rtb
 ```
 
 **Konfiguration:** Edit `rtb_wrapper.sh` für Source/Destination Paths und Exclude-Patterns.
+
+---
+
+### Check-Only Mode (neu in April 2026)
+
+**Zweck:** Externe Monitoring-Tools (z. B. `aggregate_status.sh`) können den Change-Detection-Status abfragen *ohne* ein Backup zu triggern oder Locks zu blockieren.
+
+**Vorteile:**
+- **Kein Lock:** Parallel zur laufenden Backup-Pipeline nutzbar
+- **Kein Log-Write:** Verschmutzt nicht die tatsächlichen Backup-Logs
+- **Sofortige Antwort:** Nur rsync dry-run, kein tatsächliches Backup
+- **Descriptive Output:** Lesbare Nachrichten statt kryptischer Status-Codes
+
+**Ausgabe-Format:**
+
+```bash
+# Keine Änderungen
+$ rtb_wrapper.sh --check-only
+[RTB Wrapper] no_changes → No backup needed (source == latest snapshot)
+$ echo $?
+0
+
+# Änderungen erkannt
+$ rtb_wrapper.sh --check-only
+[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)
+$ echo $?
+1
+
+# Kein Baseline-Snapshot (erster Lauf)
+$ rtb_wrapper.sh --check-only
+[RTB Wrapper] no_baseline → No previous backup snapshot found (first run needed)
+$ echo $?
+0
+
+# rsync-Fehler
+$ rtb_wrapper.sh --check-only
+[RTB Wrapper] error → rsync check failed (exit code: 23)
+$ echo $?
+2
+```
+
+**Integration Beispiel (aggregate_status.sh):**
+
+```bash
+# Status abfragen für Monitoring-Dashboard
+RTB_STATUS=$(/opt/apps/rtb/rtb_wrapper.sh --check-only 2>&1)
+RTB_EXIT=$?
+
+case $RTB_EXIT in
+  0)
+    if echo "$RTB_STATUS" | grep -q "no_changes"; then
+      jq -n '{"status": "ok", "message": "No backup needed"}' > /tmp/rtb_status.json
+    elif echo "$RTB_STATUS" | grep -q "no_baseline"; then
+      jq -n '{"status": "warning", "message": "First run needed"}' > /tmp/rtb_status.json
+    fi
+    ;;
+  1)
+    jq -n '{"status": "pending", "message": "Backup scheduled"}' > /tmp/rtb_status.json
+    ;;
+  2)
+    jq -n '{"status": "error", "message": "Check failed"}' > /tmp/rtb_status.json
+    ;;
+esac
+```
 
 ## Integration with Backup Pipeline
 
