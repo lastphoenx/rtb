@@ -14,6 +14,21 @@ NO_CHANGE_EXIT0=${NO_CHANGE_EXIT0:-1}
 FORCE=0
 if [[ "${1:-}" == "--force" ]]; then FORCE=1; shift; fi
 
+# ===== UPLOAD-ONLY mode ==============================================
+# Upload existing snapshot to pCloud without creating new RTB backup.
+# Use case: Re-upload after pCloud issues, or test uploads.
+#   /opt/apps/rtb/rtb_wrapper.sh --upload-only /mnt/backup/rtb_nas/2026-04-10-075334
+UPLOAD_ONLY_SNAPSHOT=""
+if [[ "${1:-}" == "--upload-only" ]]; then
+  UPLOAD_ONLY_SNAPSHOT="$2"
+  if [[ -z "$UPLOAD_ONLY_SNAPSHOT" || ! -d "$UPLOAD_ONLY_SNAPSHOT" ]]; then
+    echo "❌ ERROR: --upload-only requires valid snapshot path"
+    echo "Usage: $0 --upload-only /mnt/backup/rtb_nas/SNAPSHOT_NAME"
+    exit 1
+  fi
+  shift 2
+fi
+
 # ===== CHECK-ONLY mode ===============================================
 # Read-only live dry-run: no lock, no log write, no backup triggered.
 # Used by aggregate_status.sh to get current change-detection result.
@@ -72,6 +87,30 @@ if ! flock -w "$WAIT_SEC" 9; then
 fi
 
 log "[start] RTB"
+
+# ===== Upload-Only Shortcut ==========================================
+if [[ -n "$UPLOAD_ONLY_SNAPSHOT" ]]; then
+  log "[upload-only] Überspringe RTB-Backup, starte direkt pCloud-Upload"
+  log "[upload-only] Snapshot: $UPLOAD_ONLY_SNAPSHOT"
+  
+  PCLOUD_WRAPPER=${PCLOUD_WRAPPER:-/opt/apps/pcloud-tools/main/wrapper_pcloud_sync_1to1.sh}
+  PCLOUD_ENABLE=${PCLOUD_ENABLE:-1}
+  
+  if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
+    log "[start] pCloud-Sync (upload-only mode)"
+    if BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" "$UPLOAD_ONLY_SNAPSHOT"; then
+      log "[done] pCloud-Sync erfolgreich ✓"
+      exit 0
+    else
+      PCLOUD_EXIT=$?
+      log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT)"
+      exit $PCLOUD_EXIT
+    fi
+  else
+    log "[error] pCloud-Sync nicht verfügbar: $PCLOUD_WRAPPER"
+    exit 1
+  fi
+fi
 
 # ===== EntropyWatcher Safety-Check =====
 if [[ "$ENTROPYWATCHER_ENABLE" -eq 1 && "$FORCE" -ne 1 ]]; then
@@ -156,7 +195,7 @@ PCLOUD_ENABLE=${PCLOUD_ENABLE:-1}
 
 if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
   log "[start] pCloud-Sync (automatisch nach RTB)"
-  if BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER"; then
+  if BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" "${RTB}/latest"; then
     log "[done] pCloud-Sync erfolgreich"
     log "[done] Backup-Pipeline komplett ✓"
   else
