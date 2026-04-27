@@ -155,6 +155,8 @@ fi
 
 # ===== Pre-Check: Änderungen seit letztem Snapshot? =====
 LAST="$(readlink -f "${RTB}/latest" 2>/dev/null || true)"
+SKIP_RTB_BACKUP=0
+
 if [[ -n "$LAST" && -d "$LAST" ]]; then
   log "[check] Prüfe auf Änderungen seit letztem Snapshot..."
 
@@ -167,27 +169,56 @@ if [[ -n "$LAST" && -d "$LAST" ]]; then
     log "[info] Änderungen erkannt - starte Backup"
   else
     log "[skip] Keine Änderungen seit letztem Backup - kein neuer Snapshot nötig"
-    if [[ "$NO_CHANGE_EXIT0" -eq 1 && "$FORCE" -ne 1 ]]; then
-      exit 0
+    
+    # Prüfe pCloud-Upload-Status für diesen Snapshot
+    SNAPSHOT_NAME=$(basename "$LAST")
+    log "[check] Prüfe pCloud-Upload-Status für $SNAPSHOT_NAME..."
+    
+    # MariaDB-Query: War Upload erfolgreich?
+    set +e
+    PCLOUD_SUCCESS_COUNT=$(MYSQL_PWD="${PCLOUD_DB_PASS:-}" mysql \
+      -h "${PCLOUD_DB_HOST:-localhost}" \
+      -P "${PCLOUD_DB_PORT:-3306}" \
+      -u "${PCLOUD_DB_USER:-pcloud_backup}" \
+      -D "${PCLOUD_DB_NAME:-pcloud_backup}" \
+      -sN -e "SELECT COUNT(*) FROM backup_runs WHERE snapshot_name='$SNAPSHOT_NAME' AND status='SUCCESS'" 2>/dev/null)
+    MYSQL_EXIT=$?
+    set -e
+    
+    if [[ $MYSQL_EXIT -ne 0 || -z "$PCLOUD_SUCCESS_COUNT" ]]; then
+      log "[warning] pCloud-Status konnte nicht geprüft werden (MariaDB-Zugriff fehlgeschlagen)"
+      PCLOUD_SUCCESS_COUNT=0
+    fi
+    
+    if [[ "$PCLOUD_SUCCESS_COUNT" -gt 0 ]]; then
+      log "[skip] ✓ RTB und pCloud beide erfolgreich - nichts zu tun"
+      if [[ "$NO_CHANGE_EXIT0" -eq 1 && "$FORCE" -ne 1 ]]; then
+        exit 0
+      fi
     else
-      log "[info] no-change Override aktiv → starte Backup trotzdem"
+      log "[info] ⚠ RTB ok, aber pCloud-Upload fehlt - Upload wird nachgeholt"
+      SKIP_RTB_BACKUP=1  # RTB überspringen, direkt zu pCloud
     fi
   fi
 fi
 
 # ===== Backup fahren =====
-# (optional sanfter: ionice/nice davor setzen)
-set +e
-sudo bash "$RTB_SCRIPT" "$SRC" "$RTB" "$RTB_EXCL"
-RTB_EXIT=$?
-set -e
+if [[ "$SKIP_RTB_BACKUP" -eq 1 ]]; then
+  log "[skip] RTB-Backup wird übersprungen (Snapshot bereits vorhanden)"
+else
+  # (optional sanfter: ionice/nice davor setzen)
+  set +e
+  sudo bash "$RTB_SCRIPT" "$SRC" "$RTB" "$RTB_EXCL"
+  RTB_EXIT=$?
+  set -e
 
-if [[ $RTB_EXIT -ne 0 ]]; then
-  log "[ABORT] RTB fehlgeschlagen (Exit $RTB_EXIT) - pCloud-Sync wird übersprungen"
-  exit $RTB_EXIT
+  if [[ $RTB_EXIT -ne 0 ]]; then
+    log "[ABORT] RTB fehlgeschlagen (Exit $RTB_EXIT) - pCloud-Sync wird übersprungen"
+    exit $RTB_EXIT
+  fi
+
+  log "[done] RTB erfolgreich"
 fi
-
-log "[done] RTB erfolgreich"
 
 # ===== pCloud-Sync starten =====
 PCLOUD_WRAPPER=${PCLOUD_WRAPPER:-/opt/apps/pcloud-tools/main/wrapper_pcloud_sync_1to1.sh}
