@@ -2,10 +2,42 @@
 set -euo pipefail
 
 # ===== Konfig =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC=${SRC:-/srv/nas}
 RTB=${RTB:-/mnt/backup/rtb_nas}
 RTB_SCRIPT=${RTB_SCRIPT:-/opt/apps/rtb/rsync_tmbackup.sh}
 RTB_EXCL=${RTB_EXCL:-/opt/apps/rtb/excludes.txt}
+
+# Load pCloud config from .env (for MariaDB credentials)
+PCLOUD_MAIN_DIR=${PCLOUD_MAIN_DIR:-/opt/apps/pcloud-tools/main}
+ENV_FILE="${PCLOUD_MAIN_DIR}/.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+  while IFS='=' read -r key val; do
+    # Skip comments and empty lines
+    [[ "$key" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$key" ]] && continue
+    # Remove inline comments
+    val=$(echo "$val" | sed 's/[[:space:]]#.*//')
+    # Trim whitespace
+    val=$(echo "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    # Remove quotes
+    if [[ "$val" =~ ^\"(.*)\"$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    elif [[ "$val" =~ ^\'(.*)\'$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    fi
+    # Export variable
+    export "${key}=${val}"
+  done < "$ENV_FILE"
+fi
+
+# MariaDB Config (from .env or defaults)
+PCLOUD_DB_HOST="${PCLOUD_DB_HOST:-localhost}"
+PCLOUD_DB_PORT="${PCLOUD_DB_PORT:-3306}"
+PCLOUD_DB_NAME="${PCLOUD_DB_NAME:-pcloud_backup}"
+PCLOUD_DB_USER="${PCLOUD_DB_USER:-pcloud_backup}"
+PCLOUD_DB_PASS="${PCLOUD_DB_PASS:-}"
 
 # Bei "keine Änderungen": 1 = sofort Exit 0 (Default), 0 = trotzdem Backup fahren
 NO_CHANGE_EXIT0=${NO_CHANGE_EXIT0:-1}
@@ -176,18 +208,20 @@ if [[ -n "$LAST" && -d "$LAST" ]]; then
     
     # MariaDB-Query: War Upload erfolgreich?
     set +e
-    PCLOUD_SUCCESS_COUNT=$(MYSQL_PWD="${PCLOUD_DB_PASS:-}" mysql \
-      -h "${PCLOUD_DB_HOST:-localhost}" \
-      -P "${PCLOUD_DB_PORT:-3306}" \
-      -u "${PCLOUD_DB_USER:-pcloud_backup}" \
-      -D "${PCLOUD_DB_NAME:-pcloud_backup}" \
+    PCLOUD_SUCCESS_COUNT=$(MYSQL_PWD="$PCLOUD_DB_PASS" mysql \
+      -h "$PCLOUD_DB_HOST" \
+      -P "$PCLOUD_DB_PORT" \
+      -u "$PCLOUD_DB_USER" \
+      -D "$PCLOUD_DB_NAME" \
       -sN -e "SELECT COUNT(*) FROM backup_runs WHERE snapshot_name='$SNAPSHOT_NAME' AND status='SUCCESS'" 2>/dev/null)
     MYSQL_EXIT=$?
     set -e
     
     if [[ $MYSQL_EXIT -ne 0 || -z "$PCLOUD_SUCCESS_COUNT" ]]; then
-      log "[warning] pCloud-Status konnte nicht geprüft werden (MariaDB-Zugriff fehlgeschlagen)"
-      PCLOUD_SUCCESS_COUNT=0
+      log "[error] pCloud-Status konnte nicht geprüft werden (MariaDB-Fehler: Exit $MYSQL_EXIT)"
+      log "[error] Credentials: $PCLOUD_DB_USER@$PCLOUD_DB_HOST:$PCLOUD_DB_PORT/$PCLOUD_DB_NAME"
+      log "[abort] Abbruch - DB-Zugriff erforderlich für sichere Operation"
+      exit 3
     fi
     
     if [[ "$PCLOUD_SUCCESS_COUNT" -gt 0 ]]; then
