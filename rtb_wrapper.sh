@@ -145,14 +145,25 @@ if [[ -n "$UPLOAD_ONLY_SNAPSHOT" ]]; then
   
   if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
     log "[start] pCloud-Sync (upload-only mode)"
-    if BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" "$UPLOAD_ONLY_SNAPSHOT"; then
-      log "[done] pCloud-Sync erfolgreich ✓"
+    pcloud_out_file="$(mktemp /tmp/rtb_pcloud_upload_only.XXXXXX)"
+    set +e
+    BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" "$UPLOAD_ONLY_SNAPSHOT" 2>&1 | tee "$pcloud_out_file"
+    PCLOUD_EXIT=${PIPESTATUS[0]}
+    set -e
+
+    if [[ $PCLOUD_EXIT -eq 0 ]]; then
+      if grep -q "Preflight: .*Sync wird übersprungen" "$pcloud_out_file"; then
+        log "[skip] pCloud-Sync übersprungen (Preflight nicht OK)"
+      else
+        log "[done] pCloud-Sync erfolgreich ✓"
+      fi
+      rm -f "$pcloud_out_file" || true
       exit 0
-    else
-      PCLOUD_EXIT=$?
-      log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT)"
-      exit $PCLOUD_EXIT
     fi
+
+    rm -f "$pcloud_out_file" || true
+    log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT)"
+    exit $PCLOUD_EXIT
   else
     log "[error] pCloud-Sync nicht verfügbar: $PCLOUD_WRAPPER"
     exit 1
@@ -275,11 +286,23 @@ PCLOUD_ENABLE=${PCLOUD_ENABLE:-1}
 
 if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
   log "[start] pCloud-Sync (automatisch nach RTB)"
-  if BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" "${RTB}/latest"; then
-    log "[done] pCloud-Sync erfolgreich"
-    log "[done] Backup-Pipeline komplett ✓"
+  pcloud_out_file="$(mktemp /tmp/rtb_pcloud_pipeline.XXXXXX)"
+  set +e
+  BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" "${RTB}/latest" 2>&1 | tee "$pcloud_out_file"
+  PCLOUD_EXIT=${PIPESTATUS[0]}
+  set -e
+
+  if [[ $PCLOUD_EXIT -eq 0 ]]; then
+    if grep -q "Preflight: .*Sync wird übersprungen" "$pcloud_out_file"; then
+      log "[skip] pCloud-Sync übersprungen (Preflight nicht OK)"
+      log "[done] Backup-Pipeline komplett (RTB ok, pCloud übersprungen)"
+    else
+      log "[done] pCloud-Sync erfolgreich"
+      log "[done] Backup-Pipeline komplett ✓"
+    fi
+    rm -f "$pcloud_out_file" || true
   else
-    PCLOUD_EXIT=$?
+    rm -f "$pcloud_out_file" || true
     log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT)"
     exit $PCLOUD_EXIT
   fi
