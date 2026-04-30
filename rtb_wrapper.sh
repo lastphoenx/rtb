@@ -76,7 +76,7 @@ if [[ "${1:-}" == "--check-only" ]]; then
   fi
   rsync_err_file="$(mktemp /tmp/rtb_check_only_rsync_err.XXXXXX)"
   set +e
-  check_out=$(rsync -ni --delete \
+  check_out=$(sudo -n rsync -ni --delete \
     --links --hard-links --one-file-system --times --recursive \
     --perms --owner --group \
     --exclude-from "${RTB_EXCL}" \
@@ -92,6 +92,9 @@ if [[ "${1:-}" == "--check-only" ]]; then
 
   if [[ $rsync_rc -ne 0 ]]; then
     echo "[RTB Wrapper] error → rsync check failed (exit code: $rsync_rc)"
+    if [[ $rsync_rc -eq 1 ]]; then
+      echo "[RTB Wrapper] hint: sudo -n rsync failed; ensure NOPASSWD for rsync in service context"
+    fi
     if [[ -n "${rsync_err}" ]]; then
       echo "[RTB Wrapper] rsync stderr:"
       echo "${rsync_err}"
