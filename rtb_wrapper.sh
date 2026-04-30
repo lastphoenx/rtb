@@ -74,16 +74,28 @@ if [[ "${1:-}" == "--check-only" ]]; then
     echo "[RTB Wrapper] no_baseline → No previous backup snapshot found (first run needed)"
     exit 0
   fi
+  rsync_err_file="$(mktemp /tmp/rtb_check_only_rsync_err.XXXXXX)"
   set +e
   check_out=$(rsync -ni --delete \
     --links --hard-links --one-file-system --times --recursive \
     --perms --owner --group \
     --exclude-from "${RTB_EXCL}" \
-    "${SRC}/" "$LAST/" 2>/dev/null)
+    "${SRC}/" "$LAST/" 2>"${rsync_err_file}")
   rsync_rc=$?
   set -e
+
+  rsync_err=""
+  if [[ -s "${rsync_err_file}" ]]; then
+    rsync_err="$(cat "${rsync_err_file}")"
+  fi
+  rm -f "${rsync_err_file}" || true
+
   if [[ $rsync_rc -ne 0 ]]; then
     echo "[RTB Wrapper] error → rsync check failed (exit code: $rsync_rc)"
+    if [[ -n "${rsync_err}" ]]; then
+      echo "[RTB Wrapper] rsync stderr:"
+      echo "${rsync_err}"
+    fi
     exit 2
   fi
   if echo "$check_out" | grep -qE '^[<>ch*]'; then
