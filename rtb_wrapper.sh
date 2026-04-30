@@ -126,10 +126,6 @@ exec > >(tee -a "$RTB_LOG") 2>&1
 
 log(){ printf "%s %s\n" "$(date '+%F %T')" "$*"; }
 
-# Basis-Zielordner früh anlegen, damit First-Run und Service-Läufe nicht an
-# einem fehlenden RTB-Verzeichnis scheitern.
-mkdir -p "$RTB"
-
 # ===== Lock holen =====
 exec 9>"$LOCKFILE"
 if ! flock -w "$WAIT_SEC" 9; then
