@@ -214,6 +214,58 @@ systemctl list-timers | grep rtb
 
 ---
 
+### Excludes & Backup Loop Prevention
+
+RTB verwendet eine Exclude-Datei (`excludes.txt`), die via `--exclude-from` an rsync übergeben wird.
+Sie liegt unter `/opt/apps/rtb/excludes.txt` und ist über `RTB_EXCL` konfigurierbar.
+
+#### Backup Loop durch Download-/Restore-Verzeichnisse
+
+Wenn Tools wie **pCloud Commander** Dateien in ein Unterverzeichnis der Backup-Quelle herunterladen
+(z. B. `/srv/nas/restore/`), würden diese Downloads beim nächsten RTB-Lauf als Änderungen erkannt —
+ein unnötiger Backup-Trigger oder im Extremfall eine **Backup-Loop**
+(re-download → delta → backup → re-download …).
+
+**Lösung — Zwei-Schicht-Schutz:**
+
+**Schicht 1: Statische `excludes.txt`** (greift auch bei manuellem Aufruf ohne Wrapper):
+```text
+.cache/
+tmp/
+*.tmp
+/restore/
+```
+
+**Schicht 2: Wrapper Auto-Exclude** (Laufzeit, konfigurierbar):
+
+Der Wrapper baut automatisch eine `EFFECTIVE_RTB_EXCL` Temp-Datei, die `excludes.txt` mit dem
+Restore-Pattern zusammenführt — als Sicherheitsnetz, falls `excludes.txt` direkt bearbeitet wird:
+
+```bash
+RTB_AUTO_EXCLUDE_RESTORE=1            # Default: aktiv
+RTB_RESTORE_EXCLUDE_PATTERN=/restore/ # Pattern wird in effektive Exclude-Liste eingetragen
+```
+
+Die effektive Exclude-Datei wird an **alle drei** rsync-Aufrufe im Wrapper übergeben:
+- `--check-only` Dry-Run
+- Pre-Backup Change-Detection
+- Tatsächlicher `rsync_tmbackup.sh`-Aufruf
+
+Das Wrapper-Log zeigt beim Start:
+```
+[cfg] Source: /srv/nas
+[cfg] Excludes: /tmp/rtb_excludes_effective.XXXXXX
+[cfg] Loop guard exclude active: /restore/
+```
+
+**Anpassen oder deaktivieren:**
+```bash
+RTB_AUTO_EXCLUDE_RESTORE=0 bash rtb_wrapper.sh           # Deaktivieren
+RTB_RESTORE_EXCLUDE_PATTERN=/mein-pfad/ bash rtb_wrapper.sh  # Anderes Verzeichnis
+```
+
+---
+
 ### Check-Only Mode (neu in April 2026)
 
 **Zweck:** Externe Monitoring-Tools (z. B. `aggregate_status.sh`) können den Change-Detection-Status abfragen *ohne* ein Backup zu triggern oder Locks zu blockieren.
