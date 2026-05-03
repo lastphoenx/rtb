@@ -7,6 +7,24 @@ SRC=${SRC:-/srv/nas}
 RTB=${RTB:-/mnt/backup/rtb_nas}
 RTB_SCRIPT=${RTB_SCRIPT:-/opt/apps/rtb/rsync_tmbackup.sh}
 RTB_EXCL=${RTB_EXCL:-/opt/apps/rtb/excludes.txt}
+RTB_AUTO_EXCLUDE_RESTORE=${RTB_AUTO_EXCLUDE_RESTORE:-1}
+RTB_RESTORE_EXCLUDE_PATTERN=${RTB_RESTORE_EXCLUDE_PATTERN:-/restore/}
+
+# Build an effective exclude file so we can prevent backup loops (e.g. /srv/nas/restore)
+# without modifying the shared rsync_tmbackup.sh.
+EFFECTIVE_RTB_EXCL="$RTB_EXCL"
+TMP_RTB_EXCL=""
+if [[ "$RTB_AUTO_EXCLUDE_RESTORE" -eq 1 ]]; then
+  TMP_RTB_EXCL="$(mktemp /tmp/rtb_excludes_effective.XXXXXX)"
+  if [[ -f "$RTB_EXCL" ]]; then
+    cp "$RTB_EXCL" "$TMP_RTB_EXCL"
+  fi
+  if ! grep -qF "$RTB_RESTORE_EXCLUDE_PATTERN" "$TMP_RTB_EXCL" 2>/dev/null; then
+    printf '%s\n' "$RTB_RESTORE_EXCLUDE_PATTERN" >> "$TMP_RTB_EXCL"
+  fi
+  EFFECTIVE_RTB_EXCL="$TMP_RTB_EXCL"
+  trap '[[ -n "$TMP_RTB_EXCL" ]] && rm -f "$TMP_RTB_EXCL" || true' EXIT
+fi
 
 # Load pCloud config from .env (for MariaDB credentials)
 PCLOUD_MAIN_DIR=${PCLOUD_MAIN_DIR:-/opt/apps/pcloud-tools/main}
@@ -79,7 +97,7 @@ if [[ "${1:-}" == "--check-only" ]]; then
   check_out=$(sudo -n rsync -ni --delete \
     --links --hard-links --one-file-system --times --recursive \
     --perms --owner --group \
-    --exclude-from "${RTB_EXCL}" \
+    --exclude-from "${EFFECTIVE_RTB_EXCL}" \
     "${SRC}/" "$LAST/" 2>"${rsync_err_file}")
   rsync_rc=$?
   set -e
@@ -125,6 +143,12 @@ mkdir -p "$(dirname "$RTB_LOG")"
 exec > >(tee -a "$RTB_LOG") 2>&1
 
 log(){ printf "%s %s\n" "$(date '+%F %T')" "$*"; }
+
+log "[cfg] Source: $SRC"
+log "[cfg] Excludes: $EFFECTIVE_RTB_EXCL"
+if [[ "$RTB_AUTO_EXCLUDE_RESTORE" -eq 1 ]]; then
+  log "[cfg] Loop guard exclude active: $RTB_RESTORE_EXCLUDE_PATTERN"
+fi
 
 # ===== Lock holen =====
 exec 9>"$LOCKFILE"
@@ -221,7 +245,7 @@ if [[ -n "$LAST" && -d "$LAST" ]]; then
   # rsync-Dry-Run analog zu rsync_tmbackup.sh (inkl. --delete für Löschungen)
   if rsync -ni --delete \
        --links --hard-links --one-file-system --times --recursive --perms --owner --group \
-       --exclude-from "${RTB_EXCL}" \
+      --exclude-from "${EFFECTIVE_RTB_EXCL}" \
        "${SRC}/" "$LAST/" \
        | grep -qE '^[<>ch*]'; then
     log "[info] Änderungen erkannt - starte Backup"
@@ -268,7 +292,7 @@ if [[ "$SKIP_RTB_BACKUP" -eq 1 ]]; then
 else
   # (optional sanfter: ionice/nice davor setzen)
   set +e
-  sudo bash "$RTB_SCRIPT" "$SRC" "$RTB" "$RTB_EXCL"
+  sudo bash "$RTB_SCRIPT" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL"
   RTB_EXIT=$?
   set -e
 
