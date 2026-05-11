@@ -14,7 +14,7 @@ RTB_RESTORE_EXCLUDE_PATTERN=${RTB_RESTORE_EXCLUDE_PATTERN:-/restore/}
 # without modifying the shared rsync_tmbackup.sh.
 EFFECTIVE_RTB_EXCL="$RTB_EXCL"
 TMP_RTB_EXCL=""
-if [[ "$RTB_AUTO_EXCLUDE_RESTORE" -eq 1 ]]; then
+if [[ "$RTB_AUTO_EXCLUDE_RESTORE" == "1" ]]; then
   TMP_RTB_EXCL="$(mktemp /tmp/rtb_excludes_effective.XXXXXX)"
   if [[ -f "$RTB_EXCL" ]]; then
     cp "$RTB_EXCL" "$TMP_RTB_EXCL"
@@ -22,6 +22,8 @@ if [[ "$RTB_AUTO_EXCLUDE_RESTORE" -eq 1 ]]; then
   if ! grep -qF "$RTB_RESTORE_EXCLUDE_PATTERN" "$TMP_RTB_EXCL" 2>/dev/null; then
     printf '%s\n' "$RTB_RESTORE_EXCLUDE_PATTERN" >> "$TMP_RTB_EXCL"
   fi
+  # Ensure downstream sudo/runas context can always read this temporary file.
+  chmod 0644 "$TMP_RTB_EXCL"
   EFFECTIVE_RTB_EXCL="$TMP_RTB_EXCL"
   trap '[[ -n "$TMP_RTB_EXCL" ]] && rm -f "$TMP_RTB_EXCL" || true' EXIT
 fi
@@ -146,7 +148,7 @@ log(){ printf "%s %s\n" "$(date '+%F %T')" "$*"; }
 
 log "[cfg] Source: $SRC"
 log "[cfg] Excludes: $EFFECTIVE_RTB_EXCL"
-if [[ "$RTB_AUTO_EXCLUDE_RESTORE" -eq 1 ]]; then
+if [[ "$RTB_AUTO_EXCLUDE_RESTORE" == "1" ]]; then
   log "[cfg] Loop guard exclude active: $RTB_RESTORE_EXCLUDE_PATTERN"
 fi
 
@@ -334,3 +336,4 @@ else
   log "[skip] pCloud-Sync deaktiviert oder nicht verfügbar"
   log "[done] RTB-Pipeline komplett (ohne pCloud)"
 fi
+
