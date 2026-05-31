@@ -101,9 +101,12 @@ if [[ "${1:-}" == "--check-only" ]]; then
     echo "[RTB Wrapper] no_baseline → No previous backup snapshot found (first run needed)"
     exit 0
   fi
+  # Kein sudo: identisch zum echten Pre-Check-Pfad im Wrapper (Z.255).
+  # sudo -n rsync scheitert im service-Kontext (kein TTY) still mit leerem
+  # stdout + Exit 0 → false no_changes. Plain rsync funktioniert korrekt.
   rsync_err_file="$(mktemp /tmp/rtb_check_only_rsync_err.XXXXXX)"
   set +e
-  check_out=$(sudo -n rsync -ni --delete \
+  check_out=$(rsync -ni --delete \
     --links --hard-links --one-file-system --times --recursive \
     --perms --owner --group \
     --exclude-from "${EFFECTIVE_RTB_EXCL}" \
@@ -119,9 +122,6 @@ if [[ "${1:-}" == "--check-only" ]]; then
 
   if [[ $rsync_rc -ne 0 ]]; then
     echo "[RTB Wrapper] error → rsync check failed (exit code: $rsync_rc)"
-    if [[ $rsync_rc -eq 1 ]]; then
-      echo "[RTB Wrapper] hint: sudo -n rsync failed; ensure NOPASSWD for rsync in service context"
-    fi
     if [[ -n "${rsync_err}" ]]; then
       echo "[RTB Wrapper] rsync stderr:"
       echo "${rsync_err}"
