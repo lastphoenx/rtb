@@ -179,38 +179,47 @@ Mit funktionierender lokaler Backup- und Security-Pipeline kam die Frage: **Wie 
 
 * **Delta Detection** - Prüft vor Backup-Ausführung ob Änderungen vorliegen (`rsync --dry-run`)
 
-* **Check-Only Mode** - Lightweight Status-Prüfung ohne Lock/Log für externe Monitoring-Tools (neu in April 2026)
+* **Check-Only Mode** - Lightweight Status-Prüfung ohne Lock/Log für externe Monitoring-Tools
 
 * **Safety Gate Integration** - Ruft EntropyWatcher ab: GREEN = Backup erlaubt, RED = blockiert
 
 * **Resource Efficiency** - Überspringt Backups wenn keine Änderungen (keine unnötigen rsync-Läufe)
 
-* **Logging & Monitoring** - Strukturiertes Logging, Email-Benachrichtigungen bei Fehlern
+* **Pool-Mode** - Vollständige Pipeline mit `rtb_pool_wrapper.sh` + pCloud Pool-Upload (Dedup)
 
 * **systemd-Timer Ready** - Optimiert für automatisierte Ausführung
+
+## Wrapper-Varianten
+
+| Wrapper | Zweck | pCloud-Sync |
+|---|---|---|
+| `rtb_pool_wrapper.sh` | **Produktion (Pool-Mode)** | `wrapper_pcloud_pool_sync_1to1.sh` — deduplizierter Pool-Upload |
+| `rtb_wrapper.sh` | Legacy (1to1-Mode, eingestellt) | nicht mehr verwendet |
 
 ## Usage
 
 ```bash
-# Manual run
-bash rtb_wrapper.sh
+# Produktion: Pool-Mode Wrapper (empfohlen)
+sudo bash rtb_pool_wrapper.sh
 
 # Force backup (ignore deltas & safety gate)
-bash rtb_wrapper.sh --force
+sudo bash rtb_pool_wrapper.sh --force
 
-# Check-only mode (read-only dry-run for monitoring)
-bash rtb_wrapper.sh --check-only
+# Upload-Only (bestehenden Snapshot manuell hochladen)
+sudo bash rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/2026-05-31-190737
+
+# Check-only mode (read-only dry-run für Monitoring)
+bash rtb_pool_wrapper.sh --check-only
 # → exit 0 + "no_changes"        = Source gleich letztem Snapshot
 # → exit 1 + "changes_detected"  = Backup nötig
 # → exit 0 + "no_baseline"       = Noch kein Snapshot (erster Lauf)
 # → exit 2 + "error"             = rsync-Check fehlerhaft
 
-# Automated via systemd timer
-sudo systemctl enable --now rtb-backup.timer
-systemctl list-timers | grep rtb
+# Systemd (backup-pipeline.service → rtb_pool_wrapper.sh)
+sudo systemctl status backup-pipeline.timer
 ```
 
-**Konfiguration:** Edit `rtb_wrapper.sh` für Source/Destination Paths und Exclude-Patterns.
+**Konfiguration:** `rtb_pool_wrapper.sh` für Source/Destination Paths und Exclude-Patterns (`excludes.txt`).
 
 ---
 
