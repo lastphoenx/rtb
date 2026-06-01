@@ -1,0 +1,12 @@
+[Unit]
+Description=Raspi5-NAS Konfigurations-Backup nach /srv/nas/Backup/raspi5nas/
+After=network.target smbd.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/apps/rtb/raspi5nas_backup.sh
+StandardOutput=append:/var/log/backup/raspi5nas_backup.log
+StandardError=append:/var/log/backup/raspi5nas_backup.log
+Nice=15
+IOSchedulingClass=idle
