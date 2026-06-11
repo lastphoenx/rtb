@@ -123,6 +123,12 @@ if [[ "${1:-}" == "--check-only" ]]; then
   fi
   if echo "$check_out" | grep -qE '^[<>ch*]'; then
     echo "[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)"
+    if command -v python3 &>/dev/null; then
+      delta_json=$(echo "$check_out" | python3 "${SCRIPT_DIR}/rtb_check_only_delta.py" --top-n 10 "$LAST" 2>/dev/null || true)
+      if [[ -n "$delta_json" ]]; then
+        echo "[RTB Delta JSON] ${delta_json}"
+      fi
+    fi
     exit 1
   else
     echo "[RTB Wrapper] no_changes → No backup needed (source == latest snapshot)"

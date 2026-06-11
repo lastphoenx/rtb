@@ -210,6 +210,7 @@ sudo bash rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/2026-05-31-19073
 
 # Check-only mode (read-only dry-run für Monitoring)
 bash rtb_pool_wrapper.sh --check-only
+# Bei Änderungen: JSON-Zeile [RTB Delta JSON] mit count, top_dirs, samples (30) fürs Dashboard
 # → exit 0 + "no_changes"        = Source gleich letztem Snapshot
 # → exit 1 + "changes_detected"  = Backup nötig
 # → exit 0 + "no_baseline"       = Noch kein Snapshot (erster Lauf)
