@@ -1,5 +1,17 @@
-# Beispiele
+# RTB rsync excludes — eine Zeile pro Pattern (rsync --exclude-from)
+# Produktion: /opt/apps/rtb/excludes.txt (RTB_EXCL)
+
+# Temporäre / Cache-Verzeichnisse
 .cache/
 tmp/
 *.tmp
+
+# Restore-/Download-Pfad (Backup-Loop vermeiden)
 /restore/
+
+# macOS AppleDouble-Metadaten (nicht sichern — reduziert Pool/pCloud-Noise)
+**/._*
+
+# pCloud-Pipeline (Bind-Mounts unter /srv/pcloud-* — nicht /srv/nas; falls mergerfs-Kopie)
+pcloud-archive/
+pcloud-temp/
