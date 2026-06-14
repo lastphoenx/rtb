@@ -46,8 +46,13 @@ if [[ "$RTB_AUTO_EXCLUDE_RESTORE" == "1" ]]; then
   fi
   chmod 0644 "$TMP_RTB_EXCL"
   EFFECTIVE_RTB_EXCL="$TMP_RTB_EXCL"
-  trap '[[ -n "$TMP_RTB_EXCL" ]] && rm -f "$TMP_RTB_EXCL" || true' EXIT
 fi
+
+# shellcheck source=rtb_check_excludes.sh
+source "${SCRIPT_DIR}/rtb_check_excludes.sh"
+TMP_RTB_CHECK_EXCL=""
+EFFECTIVE_RTB_CHECK_EXCL="$EFFECTIVE_RTB_EXCL"
+rtb_build_check_excludes "$EFFECTIVE_RTB_EXCL"
 
 LAST="$(readlink -f "${RTB}/latest" 2>/dev/null || true)"
 if [[ -z "$LAST" || ! -d "$LAST" ]]; then
@@ -57,18 +62,18 @@ fi
 
 echo "Baseline: $LAST"
 echo "Quelle:   ${SRC}/"
-echo "Excludes: ${EFFECTIVE_RTB_EXCL}"
+echo "Excludes: ${EFFECTIVE_RTB_CHECK_EXCL} (Delta-Check, inkl. Pipeline)"
 echo ""
 
 DELTA_FILE="$(mktemp /tmp/rtb_delta_report.XXXXXX)"
 RSYNC_ERR="$(mktemp /tmp/rtb_delta_report_err.XXXXXX)"
-trap 'rm -f "$DELTA_FILE" "$RSYNC_ERR"; [[ -n "$TMP_RTB_EXCL" ]] && rm -f "$TMP_RTB_EXCL" || true' EXIT
+trap 'rm -f "$DELTA_FILE" "$RSYNC_ERR"; rtb_cleanup_excludes' EXIT
 
 set +e
 sudo -n rsync -ni --delete \
   --links --hard-links --one-file-system --times --recursive \
   --perms --owner --group \
-  --exclude-from "${EFFECTIVE_RTB_EXCL}" \
+  --exclude-from "${EFFECTIVE_RTB_CHECK_EXCL}" \
   "${SRC}/" "$LAST/" >"$DELTA_FILE" 2>"$RSYNC_ERR"
 rsync_rc=$?
 set -e

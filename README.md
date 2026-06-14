@@ -244,7 +244,10 @@ ein unnötiger Backup-Trigger oder im Extremfall eine **Backup-Loop**
 tmp/
 *.tmp
 /restore/
+**/._*          # macOS AppleDouble — nicht in Pool/pCloud
 ```
+
+Siehe auch [entropy-watcher NAS_FALSE_POSITIVES.md](../entropy-watcher-und-clamav-scanner/docs/NAS_FALSE_POSITIVES.md) — EntropyWatcher-Excludes (`common.env`) und RTB-Excludes sind **getrennte** Schichten.
 
 **Schicht 2: Wrapper Auto-Exclude** (Laufzeit, konfigurierbar):
 
@@ -256,10 +259,15 @@ RTB_AUTO_EXCLUDE_RESTORE=1            # Default: aktiv
 RTB_RESTORE_EXCLUDE_PATTERN=/restore/ # Pattern wird in effektive Exclude-Liste eingetragen
 ```
 
-Die effektive Exclude-Datei wird an **alle drei** rsync-Aufrufe im Wrapper übergeben:
-- `--check-only` Dry-Run
-- Pre-Backup Change-Detection
-- Tatsächlicher `rsync_tmbackup.sh`-Aufruf
+Die effektive Exclude-Datei wird an rsync unterschiedlich übergeben:
+
+| Aufruf | Exclude-Datei | Pipeline-Pfade (`/pcloud-archive/`, `/pcloud-temp/`) |
+|--------|---------------|--------------------------------------------------------|
+| `--check-only` Dry-Run | `EFFECTIVE_RTB_CHECK_EXCL` | **ja** (via `rtb_check_excludes.sh`) |
+| Pre-Backup Change-Detection | `EFFECTIVE_RTB_CHECK_EXCL` | **ja** |
+| Tatsächlicher `rsync_tmbackup.sh` | `EFFECTIVE_RTB_EXCL` (`excludes.txt`) | **nein** — mitgesichert wenn Backup läuft |
+
+`rtb_check_excludes.sh` baut die Check-Liste aus `excludes.txt` + Pipeline-Patterns. Kein separater Export nach `Backup/raspi5nas/pcloud-*` nötig (`raspi5nas_backup.sh` sichert nur `/opt/apps` + systemd).
 
 Das Wrapper-Log zeigt beim Start:
 ```

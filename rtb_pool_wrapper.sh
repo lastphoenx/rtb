@@ -32,8 +32,15 @@ if [[ "$RTB_AUTO_EXCLUDE_RESTORE" == "1" ]]; then
   # Ensure downstream sudo/runas context can always read this temporary file.
   chmod 0644 "$TMP_RTB_EXCL"
   EFFECTIVE_RTB_EXCL="$TMP_RTB_EXCL"
-  trap '[[ -n "$TMP_RTB_EXCL" ]] && rm -f "$TMP_RTB_EXCL" || true' EXIT
 fi
+
+# Delta-Check: Pipeline-Pfade zusätzlich excluden (kein Backup-Trigger bei Upload).
+# shellcheck source=rtb_check_excludes.sh
+source "${SCRIPT_DIR}/rtb_check_excludes.sh"
+TMP_RTB_CHECK_EXCL=""
+EFFECTIVE_RTB_CHECK_EXCL="$EFFECTIVE_RTB_EXCL"
+rtb_build_check_excludes "$EFFECTIVE_RTB_EXCL"
+trap rtb_cleanup_excludes EXIT
 
 # Load pCloud config from .env (for MariaDB credentials)
 PCLOUD_MAIN_DIR=${PCLOUD_MAIN_DIR:-/opt/apps/pcloud-tools/main}
@@ -106,7 +113,7 @@ if [[ "${1:-}" == "--check-only" ]]; then
   check_out=$(sudo -n rsync -ni --delete \
     --links --hard-links --one-file-system --times --recursive \
     --perms --owner --group \
-    --exclude-from "${EFFECTIVE_RTB_EXCL}" \
+    --exclude-from "${EFFECTIVE_RTB_CHECK_EXCL}" \
     "${SRC}/" "$LAST/" 2>"${rsync_err_file}")
   rsync_rc=$?
   set -e
@@ -257,7 +264,7 @@ if [[ -n "$LAST" && -d "$LAST" ]]; then
   # rsync-Dry-Run analog zu rsync_tmbackup.sh (inkl. --delete für Löschungen)
   if rsync -ni --delete \
        --links --hard-links --one-file-system --times --recursive --perms --owner --group \
-      --exclude-from "${EFFECTIVE_RTB_EXCL}" \
+      --exclude-from "${EFFECTIVE_RTB_CHECK_EXCL}" \
        "${SRC}/" "$LAST/" \
        | grep -qE '^[<>ch*]'; then
     log "[info] Änderungen erkannt - starte Backup"
