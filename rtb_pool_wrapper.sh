@@ -302,22 +302,6 @@ fi
 if [[ "$SKIP_RTB_BACKUP" -eq 1 ]]; then
   log "[skip] RTB-Backup wird übersprungen (Snapshot bereits vorhanden)"
 else
-  # Pipeline-Artefakte exportieren (Live SSD2 → Backup/raspi5nas), damit RTB sie
-  # mitnimmt. Live-Pfade /srv/nas/pcloud-* sind in excludes.txt (kein Feedback-Loop).
-  SYNC_PIPELINE_EXPORT="${SCRIPT_DIR}/sync_pipeline_export.sh"
-  if [[ -x "$SYNC_PIPELINE_EXPORT" ]]; then
-    log "[pipeline-export] Sichere Pipeline-Artefakte vor RTB-Lauf"
-    set +e
-    bash "$SYNC_PIPELINE_EXPORT"
-    SYNC_RC=$?
-    set -e
-    if [[ $SYNC_RC -ne 0 ]]; then
-      log "[warn] pipeline-export RC=$SYNC_RC — RTB läuft trotzdem"
-    fi
-  else
-    log "[warn] $SYNC_PIPELINE_EXPORT nicht ausführbar"
-  fi
-
   # (optional sanfter: ionice/nice davor setzen)
   set +e
   sudo bash "$RTB_SCRIPT" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL"

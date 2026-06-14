@@ -12,9 +12,8 @@ tmp/
 # macOS AppleDouble-Metadaten (nicht sichern — reduziert Pool/pCloud-Noise)
 **/._*
 
-# pCloud-Pipeline unter /srv/nas (mergerfs-Doppel, NICHT /srv/pcloud-* auf SSD2):
-# Von RTB-Quelle ausgeschlossen → triggert kein Backup bei jedem Upload.
-# Vor jedem RTB-Lauf: sync_pipeline_export.sh kopiert Live-Daten nach
-# /srv/nas/Backup/raspi5nas/pcloud-{archive,temp}/ (ohne fuehrenden / nur Top-Level!).
+# pCloud-Pipeline unter /srv/nas (mergerfs-Doppel — NICHT /srv/pcloud-* auf SSD2).
+# Gleiche excludes.txt für Delta-Check und rsync: triggert kein Backup bei Upload.
+# Offsite-Manifeste: raspi5nas_backup.sh (03:00) → Backup/raspi5nas/pcloud-archive/
 /pcloud-archive/
 /pcloud-temp/

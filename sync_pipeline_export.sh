@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
 # =============================================================================
-# sync_pipeline_export.sh — Pipeline-Artefakte für RTB exportieren
+# sync_pipeline_export.sh — Pipeline-Artefakte für Offsite-Kopie (raspi5nas)
 #
-# Kopiert von den LIVE-Pfaden (SSD2-Bind-Mounts) nach /srv/nas/Backup/raspi5nas/,
-# damit RTB sie mit sichern kann, OHNE dass Änderungen unter /srv/nas/pcloud-*
-# (mergerfs-Doppel) jeden Lauf triggern.
+# Kopiert von den LIVE-Pfaden auf SSD2 (/srv/pcloud-archive, /srv/pcloud-temp)
+# nach /srv/nas/Backup/raspi5nas/ — damit der tägliche RTB-Lauf sie mitnimmt.
 #
-# Aufgerufen von:
-#   - rtb_pool_wrapper.sh / rtb_wrapper.sh (nur wenn RTB-Lauf ansteht)
-#   - raspi5nas_backup.sh (tägl. 03:00)
+# Pipeline lebt auf SSD2 (fstab bind), NICHT unter /srv/nas/pcloud-* (mergerfs).
+# RTB excluded /pcloud-archive/ + /pcloud-temp/ unter /srv/nas (excludes.txt) →
+# kein Feedback-Loop bei Uploads. Dieses Skript läuft nur via raspi5nas_backup
+# (03:00), nicht vor jedem RTB.
 # =============================================================================
 set -euo pipefail
 
 DEST="${PIPELINE_EXPORT_DEST:-/srv/nas/Backup/raspi5nas}"
 PCLOUD_ARCHIVE="${PCLOUD_ARCHIVE_DIR:-/srv/pcloud-archive}"
 PCLOUD_TEMP="${PCLOUD_TEMP_DIR:-/srv/pcloud-temp}"
-# Große Index-Checkpoints während Upload — nicht exportieren (werden nach Erfolg obsolet)
 EXCLUDE_TEMP_INDEX="${PIPELINE_EXPORT_EXCLUDE_TEMP_INDEX:-1}"
 
 log() { printf "%s %s\n" "$(date '+%F %T')" "[pipeline-export]" "$*"; }
 
 RC=0
 
-# --- pcloud-archive: nur manifests + indexes (Pool-Restore-relevant) ---
 if [[ -d "$PCLOUD_ARCHIVE" ]]; then
   log "archive: $PCLOUD_ARCHIVE → $DEST/pcloud-archive/ (manifests + indexes)"
   mkdir -p "$DEST/pcloud-archive"
@@ -39,7 +37,6 @@ else
   RC=1
 fi
 
-# --- pcloud-temp: Temp-Manifeste (keine grossen pool_index-Checkpoints) ---
 if [[ -d "$PCLOUD_TEMP" ]]; then
   log "temp: $PCLOUD_TEMP → $DEST/pcloud-temp/"
   mkdir -p "$DEST/pcloud-temp"
