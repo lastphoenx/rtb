@@ -4,7 +4,7 @@
 # /srv/nas/Backup/raspi5nas/ (NAS-Samba-Share, von dort ins pCloud-Backup).
 #
 # Gesichert:
-#   - /srv/pcloud-archive/manifests/ + indexes/   (Pool-Restore zwingend)
+#   - Pipeline-Export: manifests/, indexes/, temp/ (sync_pipeline_export.sh)
 #   - /opt/apps/                                   (Apps, OHNE .env-Dateien)
 #   - /etc/systemd/system/                         (nur Custom-Unit-Files)
 #
@@ -22,14 +22,14 @@ log "[start] raspi5nas Backup"
 
 RC=0
 
-# --- 1) pcloud-archive (Manifeste + Indexes) ---
-log "[rsync] /srv/pcloud-archive/ → $DEST/pcloud-archive/"
-mkdir -p "$DEST/pcloud-archive"
-rsync -a --delete \
-  --include="manifests/" --include="manifests/**" \
-  --include="indexes/" --include="indexes/**" \
-  --exclude="*" \
-  /srv/pcloud-archive/ "$DEST/pcloud-archive/" 2>&1 | tee -a "$LOG" || RC=$?
+# --- 1) pCloud-Pipeline-Export (manifests, indexes, temp) ---
+SYNC_SCRIPT="${SCRIPT_DIR}/sync_pipeline_export.sh"
+if [[ -x "$SYNC_SCRIPT" ]]; then
+  log "[pipeline-export] via $SYNC_SCRIPT"
+  bash "$SYNC_SCRIPT" 2>&1 | tee -a "$LOG" || RC=$?
+else
+  log "[warn] $SYNC_SCRIPT nicht ausführbar — überspringe Pipeline-Export"
+fi
 
 # --- 2) /opt/apps/ ohne .env-Dateien ---
 log "[rsync] /opt/apps/ → $DEST/opt-apps/ (ohne .env)"

@@ -12,6 +12,9 @@ tmp/
 # macOS AppleDouble-Metadaten (nicht sichern — reduziert Pool/pCloud-Noise)
 **/._*
 
-# pCloud-Pipeline (Bind-Mounts unter /srv/pcloud-* — nicht /srv/nas; falls mergerfs-Kopie)
-pcloud-archive/
-pcloud-temp/
+# pCloud-Pipeline unter /srv/nas (mergerfs-Doppel, NICHT /srv/pcloud-* auf SSD2):
+# Von RTB-Quelle ausgeschlossen → triggert kein Backup bei jedem Upload.
+# Vor jedem RTB-Lauf: sync_pipeline_export.sh kopiert Live-Daten nach
+# /srv/nas/Backup/raspi5nas/pcloud-{archive,temp}/ (ohne fuehrenden / nur Top-Level!).
+/pcloud-archive/
+/pcloud-temp/
