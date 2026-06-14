@@ -324,8 +324,8 @@ if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
   log "[start] pCloud-Sync POOL-MODE (automatisch nach RTB)"
   pcloud_out_file="$(mktemp /tmp/rtb_pcloud_pipeline.XXXXXX)"
   set +e
-  # Ohne Target -> Catch-up: laedt ALLE lokalen Snapshots ohne remote .upload_complete
-  # nach (heilt auch Backlog). Einzel-Snapshot laeuft separat ueber --upload-only.
+  # Catch-up: latest-first, Backlog-Fehler blockieren juengere Snapshots nicht.
+  # Einzel-Snapshot: rtb_pool_wrapper.sh --upload-only <path>
   BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" 2>&1 | tee "$pcloud_out_file"
   PCLOUD_EXIT=${PIPESTATUS[0]}
   set -e
