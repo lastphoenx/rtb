@@ -11,6 +11,16 @@
 RTB_TRIGGER_ONLY_PATTERNS=(
   '/pcloud-archive/'
   '/pcloud-temp/'
+  'pcloud-archive/'
+  'pcloud-temp/'
+)
+
+# rsync --exclude-from braucht beide Formen (anchored + unanchored)
+RTB_TRIGGER_ONLY_EXCLUDE_FILE_PATTERNS=(
+  '/pcloud-archive/'
+  '/pcloud-temp/'
+  'pcloud-archive/'
+  'pcloud-temp/'
 )
 
 rtb_build_check_excludes() {
@@ -22,7 +32,7 @@ rtb_build_check_excludes() {
     : >"$TMP_RTB_CHECK_EXCL"
   fi
   local pat
-  for pat in "${RTB_TRIGGER_ONLY_PATTERNS[@]}"; do
+  for pat in "${RTB_TRIGGER_ONLY_EXCLUDE_FILE_PATTERNS[@]}"; do
     grep -qF "$pat" "$TMP_RTB_CHECK_EXCL" 2>/dev/null || printf '%s\n' "$pat" >>"$TMP_RTB_CHECK_EXCL"
   done
   chmod 0644 "$TMP_RTB_CHECK_EXCL"
@@ -56,10 +66,39 @@ if excl:
     except OSError:
         pass
 print(json.dumps({
-    "trigger_only": trigger,
+    "trigger_only": ["/pcloud-archive/", "/pcloud-temp/"],
     "never_backup": never,
 }, ensure_ascii=False))
 PY
+}
+
+# Analysiert rsync -ni: echte Trigger-Deltas vs. nur pcloud-archive/temp
+# Exit 0 = echte Änderungen, 1 = keine (evtl. nur Pipeline), 2 = rsync hatte keine Zeilen
+rtb_analyze_trigger_output() {
+  local check_out="$1" script_dir="$2" last="$3"
+  if ! echo "$check_out" | grep -qE '^[<>ch*]'; then
+    return 1
+  fi
+  if ! command -v python3 &>/dev/null; then
+    return 0
+  fi
+  local analysis
+  analysis=$(echo "$check_out" | python3 "${script_dir}/rtb_check_only_delta.py" \
+    --analyze --top-n 10 \
+    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${last}" 2>/dev/null) || return 0
+  if echo "$analysis" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('has_real_trigger') else 1)" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+rtb_emit_trigger_analysis_json() {
+  local check_out="$1" script_dir="$2" last="$3"
+  echo "$check_out" | python3 "${script_dir}/rtb_check_only_delta.py" \
+    --analyze --top-n 10 \
+    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${last}" 2>/dev/null || true
 }
 
 # --check-only: Trigger-Delta (CHECK_EXCL) + Backup-Scope (nur excludes.txt)
@@ -97,14 +136,25 @@ rtb_check_only_with_scope() {
   fi
 
   local trigger_rc=0
+  local analysis_json=""
   if echo "$check_out" | grep -qE '^[<>ch*]'; then
-    echo "[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)"
-    trigger_rc=1
-    if command -v python3 &>/dev/null; then
-      delta_json=$(echo "$check_out" | python3 "${script_dir}/rtb_check_only_delta.py" \
-        --top-n 10 --kind trigger "${last}" 2>/dev/null || true)
-      if [[ -n "$delta_json" ]]; then
-        echo "[RTB Delta JSON] ${delta_json}"
+    analysis_json=$(rtb_emit_trigger_analysis_json "$check_out" "${script_dir}" "${last}")
+    if rtb_analyze_trigger_output "$check_out" "${script_dir}" "${last}"; then
+      echo "[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)"
+      trigger_rc=1
+      if [[ -n "$analysis_json" ]] && command -v python3 &>/dev/null; then
+        delta_json=$(echo "$analysis_json" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['trigger_real']))" 2>/dev/null || true)
+        if [[ -n "$delta_json" ]]; then
+          echo "[RTB Delta JSON] ${delta_json}"
+        fi
+      fi
+    else
+      echo "[RTB Wrapper] no_changes → No backup needed (only pipeline paths changed)"
+      if [[ -n "$analysis_json" ]] && command -v python3 &>/dev/null; then
+        pipe_json=$(echo "$analysis_json" | python3 -c "import json,sys; d=json.load(sys.stdin)['trigger_pipeline_only']; print(json.dumps(d) if d.get('count') else '')" 2>/dev/null || true)
+        if [[ -n "$pipe_json" ]]; then
+          echo "[RTB PipelineOnly JSON] ${pipe_json}"
+        fi
       fi
     fi
   else

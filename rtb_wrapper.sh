@@ -219,12 +219,13 @@ SKIP_RTB_BACKUP=0
 if [[ -n "$LAST" && -d "$LAST" ]]; then
   log "[check] Prüfe auf Änderungen seit letztem Snapshot..."
 
-  # rsync-Dry-Run analog zu rsync_tmbackup.sh (inkl. --delete für Löschungen)
-  if rsync -ni --delete \
+  local pre_check_out
+  pre_check_out=$(rsync -ni --delete \
        --links --hard-links --one-file-system --times --recursive --perms --owner --group \
       --exclude-from "${EFFECTIVE_RTB_CHECK_EXCL}" \
-       "${SRC}/" "$LAST/" \
-       | grep -qE '^[<>ch*]'; then
+       "${SRC}/" "$LAST/")
+
+  if rtb_analyze_trigger_output "$pre_check_out" "${SCRIPT_DIR}" "$LAST"; then
     log "[info] Änderungen erkannt - starte Backup"
   else
     log "[skip] Keine Änderungen seit letztem Backup - kein neuer Snapshot nötig"
