@@ -108,43 +108,8 @@ if [[ "${1:-}" == "--check-only" ]]; then
     echo "[RTB Wrapper] no_baseline → No previous backup snapshot found (first run needed)"
     exit 0
   fi
-  rsync_err_file="$(mktemp /tmp/rtb_check_only_rsync_err.XXXXXX)"
-  set +e
-  check_out=$(sudo -n rsync -ni --delete \
-    --links --hard-links --one-file-system --times --recursive \
-    --perms --owner --group \
-    --exclude-from "${EFFECTIVE_RTB_CHECK_EXCL}" \
-    "${SRC}/" "$LAST/" 2>"${rsync_err_file}")
-  rsync_rc=$?
-  set -e
-
-  rsync_err=""
-  if [[ -s "${rsync_err_file}" ]]; then
-    rsync_err="$(cat "${rsync_err_file}")"
-  fi
-  rm -f "${rsync_err_file}" || true
-
-  if [[ $rsync_rc -ne 0 ]]; then
-    echo "[RTB Wrapper] error → rsync check failed (exit code: $rsync_rc)"
-    if [[ -n "${rsync_err}" ]]; then
-      echo "[RTB Wrapper] rsync stderr:"
-      echo "${rsync_err}"
-    fi
-    exit 2
-  fi
-  if echo "$check_out" | grep -qE '^[<>ch*]'; then
-    echo "[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)"
-    if command -v python3 &>/dev/null; then
-      delta_json=$(echo "$check_out" | python3 "${SCRIPT_DIR}/rtb_check_only_delta.py" --top-n 10 "$LAST" 2>/dev/null || true)
-      if [[ -n "$delta_json" ]]; then
-        echo "[RTB Delta JSON] ${delta_json}"
-      fi
-    fi
-    exit 1
-  else
-    echo "[RTB Wrapper] no_changes → No backup needed (source == latest snapshot)"
-    exit 0
-  fi
+  rtb_check_only_with_scope "${SRC}" "${LAST}" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
+  exit $?
 fi
 
 # === EntropyWatcher Safety-Gate ===

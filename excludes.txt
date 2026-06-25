@@ -1,12 +1,34 @@
 # RTB rsync excludes — eine Zeile pro Pattern (rsync --exclude-from)
 # Produktion: /opt/apps/rtb/excludes.txt (RTB_EXCL)
-# Gilt fuer das echte Backup (rsync_tmbackup).
-# Delta-Check zusaetzlich: /pcloud-archive/ + /pcloud-temp/ (nur Check, siehe Wrapper).
+#
+# === ZWEI SCHICHTEN ===
+#
+# A) DIESE DATEI (excludes.txt) — echtes Backup (rsync_tmbackup)
+#    Pattern hier = wird NIE ins RTB-Snapshot kopiert.
+#
+# B) rtb_check_excludes.sh — NUR Delta-Check (rsync -ni, „triggert Backup?“)
+#    Zusätzlich zu dieser Datei: /pcloud-archive/, /pcloud-temp/
+#    → Änderungen dort starten KEIN Backup allein,
+#      landen aber im Snapshot wenn z.B. Paperless ein Backup auslöst.
+#
+# Siehe rtb/README.md § Excludes & Backup Loop Prevention
 
 # Temporäre / Cache-Verzeichnisse
 .cache/
 tmp/
 *.tmp
+
+# Python — nie sichern (auch nicht bei Mitbackup)
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
 
 # Restore-/Download-Pfad (Backup-Loop vermeiden)
 /restore/

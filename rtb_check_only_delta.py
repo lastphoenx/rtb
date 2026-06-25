@@ -21,7 +21,13 @@ def _path_from_line(line: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
-def build_delta_preview(rsync_output: str, baseline: str, top_n: int = 20) -> dict:
+def build_delta_preview(
+    rsync_output: str,
+    baseline: str,
+    top_n: int = 20,
+    *,
+    kind: str = "trigger",
+) -> dict:
     lines = [ln for ln in rsync_output.splitlines() if _ITEMIZE_RE.match(ln)]
     paths: list[str] = []
     for ln in lines:
@@ -30,6 +36,7 @@ def build_delta_preview(rsync_output: str, baseline: str, top_n: int = 20) -> di
             paths.append(p)
     tops = Counter(p.split("/")[0] if "/" in p else p for p in paths)
     return {
+        "kind": kind,
         "count": len(lines),
         "baseline": baseline,
         "top_dirs": [{"dir": k, "count": v} for k, v in tops.most_common(top_n)],
@@ -62,9 +69,20 @@ def main() -> int:
         default="json",
         help="Output format (default: json for --check-only wrapper)",
     )
+    parser.add_argument(
+        "--kind",
+        choices=("trigger", "backup_scope"),
+        default="trigger",
+        help="trigger = Backup-Trigger-Delta; backup_scope = Mitgesichert bei Backup",
+    )
     args = parser.parse_args()
 
-    preview = build_delta_preview(sys.stdin.read(), args.baseline, top_n=max(1, args.top_n))
+    preview = build_delta_preview(
+        sys.stdin.read(),
+        args.baseline,
+        top_n=max(1, args.top_n),
+        kind=args.kind,
+    )
     if args.format == "text":
         print(format_text(preview))
     else:

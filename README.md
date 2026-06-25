@@ -238,14 +238,25 @@ ein unnötiger Backup-Trigger oder im Extremfall eine **Backup-Loop**
 
 **Lösung — Zwei-Schicht-Schutz:**
 
-**Schicht 1: Statische `excludes.txt`** (greift auch bei manuellem Aufruf ohne Wrapper):
+**Schicht 1: Statische `excludes.txt`** (echtes rsync_tmbackup — Pattern = **nie** ins Snapshot):
 ```text
 .cache/
 tmp/
 *.tmp
 /restore/
-**/._*          # macOS AppleDouble — nicht in Pool/pCloud
+**/._*          # macOS AppleDouble
+__pycache__/    # Python-Bytecode
+*.py[cod]
 ```
+
+**Schicht 2: `rtb_check_excludes.sh`** (nur rsync `-ni` Delta-Check — **zusätzlich** zu excludes.txt):
+```text
+/pcloud-archive/
+/pcloud-temp/
+```
+→ Änderungen dort **triggern kein Backup**, werden aber **mitgesichert** wenn z.B. Paperless ein Backup auslöst.
+
+Dashboard zeigt beides getrennt: **Backup-Trigger** vs. **Mitgesichert bei Backup** (seit Juni 2026).
 
 Siehe auch [entropy-watcher NAS_FALSE_POSITIVES.md](../entropy-watcher-und-clamav-scanner/docs/NAS_FALSE_POSITIVES.md) — EntropyWatcher-Excludes (`common.env`) und RTB-Excludes sind **getrennte** Schichten.
 
