@@ -251,16 +251,27 @@ __pycache__/    # Python-Bytecode
 
 **Schicht 2: `rtb_check_excludes.sh`** (nur rsync `-ni` Delta-Check — **zusätzlich** zu excludes.txt):
 ```text
-/pcloud-archive/
-/pcloud-temp/
+/pcloud-archive/   pcloud-archive/
+/pcloud-temp/      pcloud-temp/
 ```
 → Änderungen dort **triggern kein Backup**, werden aber **mitgesichert** wenn z.B. Paperless ein Backup auslöst.
 
-Dashboard zeigt beides getrennt: **Backup-Trigger** vs. **Mitgesichert bei Backup** (seit Juni 2026).
+**Post-Filter (Juni 2026):** Falls rsync trotz Exclude noch Pipeline-Pfade im Delta listet, wertet
+`rtb_check_only_delta.py --analyze` die Ausgabe nach — nur **echte** Nutzerdaten-Pfade zählen als
+Trigger. Reiner `pcloud-temp`/`pcloud-archive`-Diff → `no_changes` (kein Snapshot).
+
+| Dashboard (monitoring-dashboard) | JSON-Quelle (`--check-only`) | Bedeutung |
+|----------------------------------|------------------------------|-----------|
+| **Backup-Trigger** | `[RTB Delta JSON]` | Echte Änderungen → nächster Lauf startet RTB |
+| **Pipeline (triggert nicht)** | `[RTB PipelineOnly JSON]` | Nur pcloud-archive/temp geändert |
+| **Mitgesichert bei Backup** | `[RTB BackupScope JSON]` | Was ins RTB käme, wenn Backup jetzt lief |
+| **Exclude-Policy** | `[RTB ExcludePolicy JSON]` | Matrix Trigger ja/nein × Snapshot mit/nie |
+
+Siehe `pcloud-tools/docs/DASHBOARD.md` § Backup-Trigger vs. Pipeline.
 
 Siehe auch [entropy-watcher NAS_FALSE_POSITIVES.md](../entropy-watcher-und-clamav-scanner/docs/NAS_FALSE_POSITIVES.md) — EntropyWatcher-Excludes (`common.env`) und RTB-Excludes sind **getrennte** Schichten.
 
-**Schicht 2: Wrapper Auto-Exclude** (Laufzeit, konfigurierbar):
+**Wrapper Auto-Exclude** (Laufzeit, konfigurierbar):
 
 Der Wrapper baut automatisch eine `EFFECTIVE_RTB_EXCL` Temp-Datei, die `excludes.txt` mit dem
 Restore-Pattern zusammenführt — als Sicherheitsnetz, falls `excludes.txt` direkt bearbeitet wird:
@@ -309,14 +320,23 @@ RTB_RESTORE_EXCLUDE_PATTERN=/mein-pfad/ bash rtb_wrapper.sh  # Anderes Verzeichn
 
 ```bash
 # Keine Änderungen
-$ rtb_wrapper.sh --check-only
+$ rtb_pool_wrapper.sh --check-only
 [RTB Wrapper] no_changes → No backup needed (source == latest snapshot)
 $ echo $?
 0
 
-# Änderungen erkannt
-$ rtb_wrapper.sh --check-only
+# Nur Pipeline geändert (Manifest/Temp) — seit fd4007a
+$ rtb_pool_wrapper.sh --check-only
+[RTB Wrapper] no_changes → No backup needed (only pipeline paths changed)
+[RTB PipelineOnly JSON] {"kind":"pipeline_only","count":2,...}
+[RTB BackupScope JSON] {"kind":"backup_scope",...}
+$ echo $?
+0
+
+# Echte Nutzerdaten-Änderung
+$ rtb_pool_wrapper.sh --check-only
 [RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)
+[RTB Delta JSON] {"kind":"trigger",...}
 $ echo $?
 1
 
