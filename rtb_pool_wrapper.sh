@@ -227,7 +227,7 @@ if [[ -n "$LAST" && -d "$LAST" ]]; then
   log "[check] Prüfe auf Änderungen seit letztem Snapshot..."
 
   set +e
-  rtb_detect_real_trigger_changes "${SRC}" "$LAST" "${EFFECTIVE_RTB_CHECK_EXCL}" "${SCRIPT_DIR}"
+  rtb_detect_real_trigger_changes "${SRC}" "$LAST" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
   trigger_rc=$?
   set -e
 

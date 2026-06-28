@@ -101,6 +101,43 @@ rtb_emit_trigger_analysis_json() {
     "${last}" 2>/dev/null || true
 }
 
+rtb_emit_trigger_analysis_from_file() {
+  local delta_file="$1" script_dir="$2" last="$3"
+  rtb_delta_itemize_lines "$delta_file" | python3 "${script_dir}/rtb_check_only_delta.py" \
+    --analyze --top-n 10 \
+    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${last}" 2>/dev/null || true
+}
+
+rtb_analyze_trigger_file() {
+  local delta_file="$1" script_dir="$2" last="$3"
+  local analysis
+  if ! rtb_delta_itemize_lines "$delta_file" | grep -q .; then
+    return 1
+  fi
+  if ! command -v python3 &>/dev/null; then
+    return 0
+  fi
+  analysis=$(rtb_emit_trigger_analysis_from_file "$delta_file" "${script_dir}" "${last}")
+  if echo "$analysis" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('has_real_trigger') else 1)" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+# Backup-Scope-JSON: Nutzerdaten ausser pcloud-archive/temp?
+rtb_scope_json_has_user_delta() {
+  local scope_json="$1"
+  [[ -n "$scope_json" ]] || return 1
+  echo "$scope_json" | python3 -c "
+import json, sys
+skip = {'pcloud-archive', 'pcloud-temp', '.'}
+d = json.load(sys.stdin)
+n = sum(r['count'] for r in d.get('top_dirs', []) if r.get('dir') not in skip)
+sys.exit(0 if n > 0 else 1)
+" 2>/dev/null
+}
+
 # rsync -ni gegen RTB latest. Ausgabe in Temp-Datei (nicht $() — große Deltas + stderr).
 # Setzt RTB_DELTA_FILE, RTB_DELTA_ERR, RTB_DELTA_RSYNC_RC. Caller räumt Temp-Dateien auf.
 rtb_run_delta_rsync_ni() {
@@ -132,8 +169,8 @@ rtb_delta_itemize_lines() {
 
 # Pre-Check / --check-only: echte Nutzerdaten-Änderungen? (0=ja, 1=nein/pipeline-only, 2=rsync error)
 rtb_detect_real_trigger_changes() {
-  local src="$1" last="$2" check_excl="$3" script_dir="$4"
-  local delta_file delta_err rsync_rc filtered
+  local src="$1" last="$2" check_excl="$3" backup_excl="$4" script_dir="$5"
+  local delta_file delta_err rsync_rc scope_file scope_err scope_json
 
   rtb_run_delta_rsync_ni "$src" "$last" "$check_excl"
   delta_file="$RTB_DELTA_FILE"
@@ -145,17 +182,35 @@ rtb_detect_real_trigger_changes() {
     return 2
   fi
 
-  if ! rtb_delta_itemize_lines "$delta_file" | grep -q .; then
+  if rtb_analyze_trigger_file "$delta_file" "${script_dir}" "${last}"; then
     rm -f "$delta_file" "$delta_err" || true
-    return 1
-  fi
-
-  filtered="$(rtb_delta_itemize_lines "$delta_file")"
-  rm -f "$delta_file" "$delta_err" || true
-
-  if rtb_analyze_trigger_output "$filtered" "${script_dir}" "${last}"; then
     return 0
   fi
+  rm -f "$delta_file" "$delta_err" || true
+
+  # Fallback: Trigger-rsync listet oft nur durchsickernde pcloud-* — Scope (excludes.txt) prüfen
+  scope_file="$(mktemp /tmp/rtb_check_scope_fb.XXXXXX)"
+  scope_err="$(mktemp /tmp/rtb_check_scope_fb_err.XXXXXX)"
+  set +e
+  if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
+    sudo -n rsync -ni --delete \
+      --links --hard-links --one-file-system --times --recursive \
+      --perms --owner --group \
+      --exclude-from "${backup_excl}" \
+      "${src}/" "${last}/" >"$scope_file" 2>"$scope_err"
+  else
+    rsync -ni --delete \
+      --links --hard-links --one-file-system --times --recursive \
+      --perms --owner --group \
+      --exclude-from "${backup_excl}" \
+      "${src}/" "${last}/" >"$scope_file" 2>"$scope_err"
+  fi
+  set -e
+  if rtb_analyze_trigger_file "$scope_file" "${script_dir}" "${last}"; then
+    rm -f "$scope_file" "$scope_err" || true
+    return 0
+  fi
+  rm -f "$scope_file" "$scope_err" || true
   return 1
 }
 
@@ -163,7 +218,7 @@ rtb_detect_real_trigger_changes() {
 # Gibt Exit-Code des Trigger-Checks zurück (0=no_changes, 1=changes_detected, 2=error)
 rtb_check_only_with_scope() {
   local src="$1" last="$2" check_excl="$3" backup_excl="$4" script_dir="$5"
-  local delta_file delta_err rsync_rc filtered scope_file scope_err scope_json
+  local delta_file delta_err rsync_rc scope_file scope_err scope_json
   local trigger_rc=0 analysis_json delta_json pipe_json
 
   rtb_run_delta_rsync_ni "$src" "$last" "$check_excl"
@@ -184,25 +239,23 @@ rtb_check_only_with_scope() {
     return 2
   fi
 
-  if rtb_delta_itemize_lines "$delta_file" | grep -q .; then
-    filtered="$(rtb_delta_itemize_lines "$delta_file")"
-    analysis_json=$(rtb_emit_trigger_analysis_json "$filtered" "${script_dir}" "${last}")
-    if rtb_analyze_trigger_output "$filtered" "${script_dir}" "${last}"; then
-      echo "[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)"
-      trigger_rc=1
-      if [[ -n "$analysis_json" ]] && command -v python3 &>/dev/null; then
-        delta_json=$(echo "$analysis_json" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['trigger_real']))" 2>/dev/null || true)
-        if [[ -n "$delta_json" ]]; then
-          echo "[RTB Delta JSON] ${delta_json}"
-        fi
+  if rtb_analyze_trigger_file "$delta_file" "${script_dir}" "${last}"; then
+    echo "[RTB Wrapper] changes_detected → Backup needed (new/changed/deleted files found)"
+    trigger_rc=1
+    analysis_json=$(rtb_emit_trigger_analysis_from_file "$delta_file" "${script_dir}" "${last}")
+    if [[ -n "$analysis_json" ]] && command -v python3 &>/dev/null; then
+      delta_json=$(echo "$analysis_json" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['trigger_real']))" 2>/dev/null || true)
+      if [[ -n "$delta_json" ]]; then
+        echo "[RTB Delta JSON] ${delta_json}"
       fi
-    else
-      echo "[RTB Wrapper] no_changes → No backup needed (only pipeline paths changed)"
-      if [[ -n "$analysis_json" ]] && command -v python3 &>/dev/null; then
-        pipe_json=$(echo "$analysis_json" | python3 -c "import json,sys; d=json.load(sys.stdin)['trigger_pipeline_only']; print(json.dumps(d) if d.get('count') else '')" 2>/dev/null || true)
-        if [[ -n "$pipe_json" ]]; then
-          echo "[RTB PipelineOnly JSON] ${pipe_json}"
-        fi
+    fi
+  elif rtb_delta_itemize_lines "$delta_file" | grep -q .; then
+    echo "[RTB Wrapper] no_changes → No backup needed (only pipeline paths changed)"
+    analysis_json=$(rtb_emit_trigger_analysis_from_file "$delta_file" "${script_dir}" "${last}")
+    if [[ -n "$analysis_json" ]] && command -v python3 &>/dev/null; then
+      pipe_json=$(echo "$analysis_json" | python3 -c "import json,sys; d=json.load(sys.stdin)['trigger_pipeline_only']; print(json.dumps(d) if d.get('count') else '')" 2>/dev/null || true)
+      if [[ -n "$pipe_json" ]]; then
+        echo "[RTB PipelineOnly JSON] ${pipe_json}"
       fi
     fi
   else
@@ -235,6 +288,20 @@ rtb_check_only_with_scope() {
         --top-n 15 --kind backup_scope "${last}" 2>/dev/null || true)
       if [[ -n "$scope_json" ]]; then
         echo "[RTB BackupScope JSON] ${scope_json}"
+      fi
+      # Fallback: Trigger-rsync mit Check-Excludes sieht oft nur pcloud-* — Scope entscheidet
+      if [[ $trigger_rc -eq 0 ]] && rtb_scope_json_has_user_delta "$scope_json"; then
+        echo "[RTB Wrapper] changes_detected → Backup needed (Nutzerdaten laut Backup-Scope)"
+        trigger_rc=1
+        if rtb_analyze_trigger_file "$scope_file" "${script_dir}" "${last}"; then
+          analysis_json=$(rtb_emit_trigger_analysis_from_file "$scope_file" "${script_dir}" "${last}")
+          if [[ -n "$analysis_json" ]] && command -v python3 &>/dev/null; then
+            delta_json=$(echo "$analysis_json" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['trigger_real']))" 2>/dev/null || true)
+            if [[ -n "$delta_json" ]]; then
+              echo "[RTB Delta JSON] ${delta_json}"
+            fi
+          fi
+        fi
       fi
     fi
     rm -f "$scope_file" "$scope_err" || true
