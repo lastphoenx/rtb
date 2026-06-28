@@ -226,13 +226,15 @@ SKIP_RTB_BACKUP=0
 if [[ -n "$LAST" && -d "$LAST" ]]; then
   log "[check] Prüfe auf Änderungen seit letztem Snapshot..."
 
-  local pre_check_out
-  pre_check_out=$(rsync -ni --delete \
-       --links --hard-links --one-file-system --times --recursive --perms --owner --group \
-      --exclude-from "${EFFECTIVE_RTB_CHECK_EXCL}" \
-       "${SRC}/" "$LAST/")
+  set +e
+  rtb_detect_real_trigger_changes "${SRC}" "$LAST" "${EFFECTIVE_RTB_CHECK_EXCL}" "${SCRIPT_DIR}"
+  trigger_rc=$?
+  set -e
 
-  if rtb_analyze_trigger_output "$pre_check_out" "${SCRIPT_DIR}" "$LAST"; then
+  if [[ $trigger_rc -eq 2 ]]; then
+    log "[error] Delta-Check fehlgeschlagen (rsync) - Backup abgebrochen"
+    exit 2
+  elif [[ $trigger_rc -eq 0 ]]; then
     log "[info] Änderungen erkannt - starte Backup"
   else
     log "[skip] Keine Änderungen seit letztem Backup - kein neuer Snapshot nötig"
