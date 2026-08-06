@@ -214,6 +214,66 @@ rtb_detect_real_trigger_changes() {
   return 1
 }
 
+# --check-only: flock + optional cache (verhindert parallele Vollbaum-Scans).
+RTB_CHECK_ONLY_LOCKFILE=${RTB_CHECK_ONLY_LOCKFILE:-/run/rtb_check_only.lock}
+RTB_CHECK_ONLY_CACHE=${RTB_CHECK_ONLY_CACHE:-/run/rtb_check_only_cache.out}
+RTB_CHECK_ONLY_CACHE_META=${RTB_CHECK_ONLY_CACHE_META:-/run/rtb_check_only_cache.meta}
+RTB_CHECK_ONLY_CACHE_TTL_SEC=${RTB_CHECK_ONLY_CACHE_TTL_SEC:-900}
+
+rtb_check_only_cache_fresh() {
+  local expected_baseline="$1"
+  local meta="$RTB_CHECK_ONLY_CACHE_META"
+  local out="$RTB_CHECK_ONLY_CACHE"
+  local ts now ttl cached_baseline
+  [[ -f "$meta" && -f "$out" ]] || return 1
+  ts=$(grep -m1 '^ts=' "$meta" 2>/dev/null | cut -d= -f2-)
+  cached_baseline=$(grep -m1 '^baseline=' "$meta" 2>/dev/null | cut -d= -f2-)
+  [[ -n "$ts" && -n "$cached_baseline" && "$cached_baseline" == "$expected_baseline" ]] || return 1
+  ttl="${RTB_CHECK_ONLY_CACHE_TTL_SEC:-900}"
+  now=$(date +%s)
+  [[ $((now - ts)) -lt "$ttl" ]]
+}
+
+rtb_check_only_serve_cache() {
+  cat "$RTB_CHECK_ONLY_CACHE"
+  local rc
+  rc=$(grep -m1 '^exit=' "$RTB_CHECK_ONLY_CACHE_META" 2>/dev/null | cut -d= -f2-)
+  return "${rc:-2}"
+}
+
+# Wrapper um rtb_check_only_with_scope: ein Lauf gleichzeitig, Cache bei Überlappung.
+# Exit: 0=no_changes, 1=changes_detected, 2=error, 3=busy (kein Cache)
+rtb_check_only_run_locked() {
+  local src="$1" last="$2" check_excl="$3" backup_excl="$4" script_dir="$5"
+  local lock_file="${RTB_CHECK_ONLY_LOCKFILE:-/run/rtb_check_only.lock}"
+  local cache_out="${RTB_CHECK_ONLY_CACHE:-/run/rtb_check_only_cache.out}"
+  local cache_meta="${RTB_CHECK_ONLY_CACHE_META:-/run/rtb_check_only_cache.meta}"
+  local tmp_out rc
+
+  exec 8>"$lock_file"
+  if ! flock -n 8; then
+    if rtb_check_only_cache_fresh "$last"; then
+      echo "[RTB Wrapper] check_cached → serving cached result (another check still running)"
+      rtb_check_only_serve_cache
+      return $?
+    fi
+    echo "[RTB Wrapper] check_busy → another --check-only is still running (no fresh cache)"
+    return 3
+  fi
+
+  tmp_out="$(mktemp /tmp/rtb_check_only_capture.XXXXXX)"
+  set +e
+  rtb_check_only_with_scope "$src" "$last" "$check_excl" "$backup_excl" "$script_dir" | tee "$tmp_out"
+  rc=${PIPESTATUS[0]}
+  set -e
+
+  cp "$tmp_out" "$cache_out"
+  printf 'ts=%s\nexit=%s\nbaseline=%s\n' "$(date +%s)" "$rc" "$last" >"$cache_meta"
+  chmod 0644 "$cache_out" "$cache_meta" 2>/dev/null || true
+  rm -f "$tmp_out"
+  return "$rc"
+}
+
 # --check-only: Trigger-Delta (CHECK_EXCL) + Backup-Scope (nur excludes.txt)
 # Gibt Exit-Code des Trigger-Checks zurück (0=no_changes, 1=changes_detected, 2=error)
 rtb_check_only_with_scope() {

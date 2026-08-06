@@ -89,19 +89,20 @@ if [[ "${1:-}" == "--upload-only" ]]; then
 fi
 
 # ===== CHECK-ONLY mode ===============================================
-# Read-only live dry-run: no lock, no log write, no backup triggered.
+# Read-only live dry-run: flock (ein Lauf), Cache bei Überlappung, kein Backup-Log.
 # Used by aggregate_status.sh to get current change-detection result.
 #   exit 0 + "no_changes"        → source == latest snapshot
 #   exit 1 + "changes_detected"  → new/changed/deleted files found
 #   exit 0 + "no_baseline"       → no latest snapshot yet (first run)
 #   exit 2 + "error"             → rsync failed
+#   exit 3 + "check_busy"        → anderer Check läuft, kein frischer Cache
 if [[ "${1:-}" == "--check-only" ]]; then
   LAST="$(readlink -f "${RTB}/latest" 2>/dev/null || true)"
   if [[ -z "$LAST" || ! -d "$LAST" ]]; then
     echo "[RTB Wrapper] no_baseline → No previous backup snapshot found (first run needed)"
     exit 0
   fi
-  rtb_check_only_with_scope "${SRC}" "${LAST}" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
+  rtb_check_only_run_locked "${SRC}" "${LAST}" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
   exit $?
 fi
 

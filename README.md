@@ -215,6 +215,8 @@ bash rtb_pool_wrapper.sh --check-only
 # → exit 1 + "changes_detected"  = Backup nötig
 # → exit 0 + "no_baseline"       = Noch kein Snapshot (erster Lauf)
 # → exit 2 + "error"             = rsync-Check fehlerhaft
+# → exit 3 + "check_busy"        = anderer Check läuft (kein frischer Cache)
+# Parallele Läufe: flock auf /run/rtb_check_only.lock; Cache /run/rtb_check_only_cache.*
 
 # Systemd (backup-pipeline.service → rtb_pool_wrapper.sh)
 sudo systemctl status backup-pipeline.timer
@@ -308,12 +310,12 @@ RTB_RESTORE_EXCLUDE_PATTERN=/mein-pfad/ bash rtb_wrapper.sh  # Anderes Verzeichn
 
 ### Check-Only Mode (neu in April 2026)
 
-**Zweck:** Externe Monitoring-Tools (z. B. `aggregate_status.sh`) können den Change-Detection-Status abfragen *ohne* ein Backup zu triggern oder Locks zu blockieren.
+**Zweck:** Externe Monitoring-Tools (z. B. `aggregate_status.sh`) können den Change-Detection-Status abfragen *ohne* ein Backup zu triggern oder die Backup-Pipeline-Lock zu blockieren.
 
 **Vorteile:**
-- **Kein Lock:** Parallel zur laufenden Backup-Pipeline nutzbar
-- **Kein Log-Write:** Verschmutzt nicht die tatsächlichen Backup-Logs
-- **Sofortige Antwort:** Nur rsync dry-run, kein tatsächliches Backup
+- **Flock:** Nur ein `--check-only`-Lauf gleichzeitig (`/run/rtb_check_only.lock`)
+- **Cache:** Bei Überlappung wird ein frischer Cache (TTL 15 min) ausgeliefert statt erneut rsync
+- **Kein Backup-Log:** Verschmutzt nicht die tatsächlichen Backup-Logs
 - **Descriptive Output:** Lesbare Nachrichten statt kryptischer Status-Codes
 
 **Ausgabe-Format:**
@@ -347,10 +349,16 @@ $ echo $?
 0
 
 # rsync-Fehler
-$ rtb_wrapper.sh --check-only
+$ rtb_pool_wrapper.sh --check-only
 [RTB Wrapper] error → rsync check failed (exit code: 23)
 $ echo $?
 2
+
+# Anderer Check läuft noch, kein Cache
+$ rtb_pool_wrapper.sh --check-only
+[RTB Wrapper] check_busy → another --check-only is still running (no fresh cache)
+$ echo $?
+3
 ```
 
 **Integration Beispiel (aggregate_status.sh):**
@@ -373,6 +381,9 @@ case $RTB_EXIT in
     ;;
   2)
     jq -n '{"status": "error", "message": "Check failed"}' > /tmp/rtb_status.json
+    ;;
+  3)
+    jq -n '{"status": "busy", "message": "Check in progress"}' > /tmp/rtb_status.json
     ;;
 esac
 ```
