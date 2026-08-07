@@ -261,6 +261,21 @@ rtb_check_only_run_locked() {
     return 3
   fi
 
+  # Kein rsync-Dry-Run während Backup/AV/Entropy (gleicher NAS-Lock)
+  if [[ -f "${script_dir}/nas_heavy_ops_lock.sh" ]]; then
+    # shellcheck source=nas_heavy_ops_lock.sh
+    source "${script_dir}/nas_heavy_ops_lock.sh"
+    if nas_heavy_ops_is_busy; then
+      if rtb_check_only_cache_fresh "$last"; then
+        echo "[RTB Wrapper] check_cached → heavy NAS job running, serving cache"
+        rtb_check_only_serve_cache
+        return $?
+      fi
+      echo "[RTB Wrapper] check_busy → backup/scan holds NAS lock (no fresh cache)"
+      return 3
+    fi
+  fi
+
   tmp_out="$(mktemp /tmp/rtb_check_only_capture.XXXXXX)"
   set +e
   rtb_check_only_with_scope "$src" "$last" "$check_excl" "$backup_excl" "$script_dir" | tee "$tmp_out"

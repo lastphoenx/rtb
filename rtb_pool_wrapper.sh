@@ -10,6 +10,8 @@ set -euo pipefail
 
 # ===== Konfig =====
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=nas_heavy_ops_lock.sh
+source "${SCRIPT_DIR}/nas_heavy_ops_lock.sh"
 SRC=${SRC:-/srv/nas}
 RTB=${RTB:-/mnt/backup/rtb_nas}
 RTB_SCRIPT=${RTB_SCRIPT:-/opt/apps/rtb/rsync_tmbackup.sh}
@@ -118,9 +120,9 @@ ENTROPYWATCHER_ENABLE=${ENTROPYWATCHER_ENABLE:-1}
 ENTROPYWATCHER_SAFETY_GATE=${ENTROPYWATCHER_SAFETY_GATE:-/opt/apps/entropywatcher/main/safety_gate.sh}
 SAFETY_GATE_STRICT=${SAFETY_GATE_STRICT:-1}  # 1 = blockiert auch bei YELLOW (empfohlen)
 
-# Gemeinsames Lock mit pCloud-Sync, damit nichts parallel läuft
-LOCKFILE=${LOCKFILE:-/run/backup_pipeline.lock}
-WAIT_SEC=${WAIT_SEC:-7200}  # max. 2h auf Lock warten
+# Gemeinsames Lock mit pCloud-Sync + Entropy/AV (nas_heavy_ops_lock.sh)
+LOCKFILE=${LOCKFILE:-${NAS_HEAVY_OPS_LOCKFILE:-/run/backup_pipeline.lock}}
+WAIT_SEC=${WAIT_SEC:-${NAS_HEAVY_OPS_WAIT_SEC:-7200}}
 
 # ========= Logging =========
 RTB_LOG=${RTB_LOG:-/var/log/backup/rtb_wrapper.log}
@@ -135,10 +137,9 @@ if [[ "$RTB_AUTO_EXCLUDE_RESTORE" == "1" ]]; then
   log "[cfg] Loop guard exclude active: $RTB_RESTORE_EXCLUDE_PATTERN"
 fi
 
-# ===== Lock holen =====
-exec 9>"$LOCKFILE"
-if ! flock -w "$WAIT_SEC" 9; then
-  log "[skip] Konnte Lock innerhalb ${WAIT_SEC}s nicht bekommen."
+# ===== Lock holen (Backup + pCloud + exkl. parallele AV/Entropy auf /srv/nas) =====
+if ! nas_heavy_ops_acquire "$WAIT_SEC"; then
+  log "[skip] Konnte NAS-Heavy-Ops-Lock innerhalb ${WAIT_SEC}s nicht bekommen."
   exit 0
 fi
 
