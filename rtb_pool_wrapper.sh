@@ -138,10 +138,17 @@ if [[ "$RTB_AUTO_EXCLUDE_RESTORE" == "1" ]]; then
 fi
 
 # ===== Lock holen (Backup + pCloud + exkl. parallele AV/Entropy auf /srv/nas) =====
+if [[ "${NAS_HEAVY_OPS_FAIL_FAST:-0}" == "1" ]] && nas_heavy_ops_is_busy; then
+  log "[skip] NAS-Heavy-Ops-Lock belegt (pCloud/AV/anderer RTB) — Fail-Fast"
+  exit 0
+fi
 if ! nas_heavy_ops_acquire "$WAIT_SEC"; then
   log "[skip] Konnte NAS-Heavy-Ops-Lock innerhalb ${WAIT_SEC}s nicht bekommen."
   exit 0
 fi
+
+apply_oom_score_adj "${RTB_OOM_SCORE_ADJ:-500}"
+log "[oom] RTB/rsync oom_score_adj=${RTB_OOM_SCORE_ADJ:-500} (bei Speichermangel zuerst beendet)"
 
 log "[start] RTB"
 

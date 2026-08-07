@@ -69,3 +69,11 @@ nas_heavy_ops_active_units() {
   fi
   return 1
 }
+
+# oom_score_adj: -1000..1000 (höher = bei OOM eher gekillt). Kinder erben vom Parent.
+apply_oom_score_adj() {
+  local adj="${1:-0}"
+  if [[ -w /proc/self/oom_score_adj ]]; then
+    echo "$adj" > /proc/self/oom_score_adj 2>/dev/null || true
+  fi
+}
