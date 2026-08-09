@@ -120,7 +120,11 @@ WAIT_SEC=${WAIT_SEC:-${NAS_HEAVY_OPS_WAIT_SEC:-7200}}
 # ========= Logging =========
 RTB_LOG=${RTB_LOG:-/var/log/backup/rtb_wrapper.log}
 mkdir -p "$(dirname "$RTB_LOG")"
-exec > >(tee -a "$RTB_LOG") 2>&1
+if [[ -n "${INVOCATION_ID:-}" ]]; then
+  exec >>"$RTB_LOG" 2>&1
+else
+  exec > >(tee -a "$RTB_LOG") 2>&1
+fi
 
 log(){ printf "%s %s\n" "$(date '+%F %T')" "$*"; }
 

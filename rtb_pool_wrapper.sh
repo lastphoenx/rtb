@@ -127,7 +127,13 @@ WAIT_SEC=${WAIT_SEC:-${NAS_HEAVY_OPS_WAIT_SEC:-7200}}
 # ========= Logging =========
 RTB_LOG=${RTB_LOG:-/var/log/backup/rtb_wrapper.log}
 mkdir -p "$(dirname "$RTB_LOG")"
-exec > >(tee -a "$RTB_LOG") 2>&1
+# Unter systemd: direkt append (kein tee-Pipe — vermeidet RAM-Backpressure bei viel stdout).
+# Manuell/interaktiv: tee für Konsole + Log.
+if [[ -n "${INVOCATION_ID:-}" ]]; then
+  exec >>"$RTB_LOG" 2>&1
+else
+  exec > >(tee -a "$RTB_LOG") 2>&1
+fi
 
 log(){ printf "%s %s\n" "$(date '+%F %T')" "$*"; }
 
@@ -294,8 +300,8 @@ fi
 if [[ "$SKIP_RTB_BACKUP" -eq 1 ]]; then
   log "[skip] RTB-Backup wird übersprungen (Snapshot bereits vorhanden)"
 else
-  # Kein --itemize-changes in Produktion (RAM/Log); Details in --log-file unter ~/.rsync_tmbackup/
   RTB_BACKUP_RSYNC_FLAGS="${RTB_BACKUP_RSYNC_FLAGS:--D --numeric-ids --links --hard-links --one-file-system --times --recursive --perms --owner --group --stats}"
+  log "[start] rsync_tmbackup (stdout → capture, nicht ins Wrapper-Tee)"
   rtb_backup_out="$(mktemp /tmp/rtb_backup_capture.XXXXXX)"
   set +e
   sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
@@ -324,10 +330,10 @@ if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
   log "[start] pCloud-Sync POOL-MODE (automatisch nach RTB)"
   pcloud_out_file="$(mktemp /tmp/rtb_pcloud_pipeline.XXXXXX)"
   set +e
-  # Catch-up: latest-first, Backlog-Fehler blockieren juengere Snapshots nicht.
-  # Einzel-Snapshot: rtb_pool_wrapper.sh --upload-only <path>
-  BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" 2>&1 | tee "$pcloud_out_file"
-  PCLOUD_EXIT=${PIPESTATUS[0]}
+  # Kein tee auf Parent-stdout — voller pCloud-Log nur in Temp, Kurzzeilen ins Wrapper-Log.
+  BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" >"$pcloud_out_file" 2>&1
+  PCLOUD_EXIT=$?
+  grep -E '^\[(INFO|WARN|ERROR|manifest|scan|upload)\]' "$pcloud_out_file" 2>/dev/null | tail -50 || true
   set -e
 
   if [[ $PCLOUD_EXIT -eq 0 ]]; then
