@@ -111,7 +111,7 @@ fi
 # === EntropyWatcher Safety-Gate ===
 ENTROPYWATCHER_ENABLE=${ENTROPYWATCHER_ENABLE:-1}
 ENTROPYWATCHER_SAFETY_GATE=${ENTROPYWATCHER_SAFETY_GATE:-/opt/apps/entropywatcher/main/safety_gate.sh}
-SAFETY_GATE_STRICT=${SAFETY_GATE_STRICT:-1}  # 1 = blockiert auch bei YELLOW (empfohlen)
+SAFETY_GATE_STRICT=${SAFETY_GATE_STRICT:-0}  # 0 = YELLOW erlaubt (wie backup-pipeline.service); 1 = auch YELLOW blockieren
 
 # Gemeinsames Lock mit pCloud-Sync + Entropy/AV (nas_heavy_ops_lock.sh)
 LOCKFILE=${LOCKFILE:-${NAS_HEAVY_OPS_LOCKFILE:-/run/backup_pipeline.lock}}
