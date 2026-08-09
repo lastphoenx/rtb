@@ -237,8 +237,14 @@ fi
 # ===== Pre-Check: Änderungen seit letztem Snapshot? =====
 LAST="$(readlink -f "${RTB}/latest" 2>/dev/null || true)"
 SKIP_RTB_BACKUP=0
+STAGED_RESUME=0
 
-if [[ -n "$LAST" && -d "$LAST" ]]; then
+if [[ -f "${RTB}/backup.inprogress" && -f "${RTB}/.rtb_staged_active" ]]; then
+  STAGED_RESUME=1
+  log "[resume] Staged-Backup offen — Delta-Check übersprungen"
+fi
+
+if [[ "$STAGED_RESUME" -eq 0 && -n "$LAST" && -d "$LAST" ]]; then
   log "[check] Prüfe auf Änderungen seit letztem Snapshot..."
 
   set +e

@@ -268,7 +268,32 @@ __pycache__/  *.py[cod]  **/._*
 
 **Trigger-Methode:** `rtb_trigger_signature.py` vergleicht pro Top-Level-Ordner Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest`. Fallback nur für Debug: `RTB_TRIGGER_MODE=rsync` oder `hybrid` (OOM-Risiko).
 
-**Backup-rsync (Default `RTB_STAGED=1`):** `rtb_staged_backup.sh` führt **mehrere rsync-Läufe** in **einen** Snapshot aus (Hardlinks/`--link-dest` pro Teilpfad). Grund: ~240k Baumeinträge (davon ~65k leere PBS-`.chunks`-Ordner) → monolithischer rsync ~5,5 GB RSS auf 8 GB-Pi (OOM). Einheiten: je Top-Level unter `/srv/nas`, `Backup/pbs2/{vm,ct,.chunks}`, je `Backup/<name>`, **`pcloud-archive`/`pcloud-temp` automatisch gesplittet** wenn &gt; `RTB_STAGED_SPLIT_THRESHOLD` (Default 15000 Einträge). Resume über `backup.inprogress` + `.rtb_staged_done`. Fallback: `RTB_STAGED=0` → vanilla `rsync_tmbackup.sh`. Logs: `~/.rsync_tmbackup/<snap>-<unit>.log`.
+**Backup-rsync (Default `RTB_STAGED=1`):** `rtb_staged_backup.sh` führt **mehrere rsync-Läufe** in **einen** Snapshot aus (Hardlinks/`--link-dest` pro Teilpfad). Grund: ~240k Baumeinträge → monolithischer rsync ~5,5 GB RSS auf 8 GB-Pi (OOM).
+
+| Thema | Detail |
+|-------|--------|
+| Einheiten | Top-Level unter `/srv/nas`, `Backup/pbs2/{vm,ct,.chunks,ns}`, je `Backup/<name>`, `pcloud-archive`/`pcloud-temp` gesplittet wenn &gt; `RTB_STAGED_SPLIT_THRESHOLD` (15000) |
+| Excludes | `excludes.txt` gilt auch beim **Erzeugen** der Unit-Liste — `/pcloud-archive/staging/` wird nicht gesplittet (keine ~47k Einheiten) |
+| Top-Level-Dateien | `README.txt` etc. direkt unter `/srv/nas/` werden als Datei-rsync gesichert (nicht als Ordner) |
+| Resume | `backup.inprogress` + `.rtb_staged_active` + `.rtb_staged_done` — Wrapper überspringt Delta-Check bei offenem Staged-Lauf |
+| Fallback | `RTB_STAGED=0` → vanilla `rsync_tmbackup.sh` |
+| Logs | `~/.rsync_tmbackup/<snap>-<unit>.log` |
+
+**Resume / manueller Lauf (ohne 15–20 min Delta-Check im Wrapper):**
+
+```bash
+sudo bash /opt/apps/rtb/rtb_staged_backup.sh \
+  --rsync-set-flags "-D --numeric-ids --links --hard-links --one-file-system --times --recursive --perms --owner --group --stats" \
+  /srv/nas /mnt/backup/rtb_nas /opt/apps/rtb/excludes.txt
+```
+
+**pCloud-Upload nach manuellem RTB** (Wrapper macht nur RTB+Upload zusammen):
+
+```bash
+sudo /opt/apps/rtb/rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/$(basename "$(readlink -f /mnt/backup/rtb_nas/latest)")
+```
+
+**Timer/Services nach Wartung wieder aktivieren:** `pcloud-tools/scripts/restore-pipeline-services.sh`
 
 **Post-Filter (bei rsync/hybrid):** `rtb_check_only_delta.py --analyze` trennt Pipeline-Pfade von echten Nutzerdaten.
 
