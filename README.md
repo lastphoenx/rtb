@@ -268,7 +268,7 @@ __pycache__/  *.py[cod]  **/._*
 
 **Trigger-Methode:** `rtb_trigger_signature.py` vergleicht pro Top-Level-Ordner Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest`. Fallback nur für Debug: `RTB_TRIGGER_MODE=rsync` oder `hybrid` (OOM-Risiko).
 
-**Backup-rsync (Default `RTB_STAGED=1`):** `rtb_staged_backup.sh` führt **mehrere rsync-Läufe** in **einen** Snapshot aus (Hardlinks/`--link-dest` pro Teilpfad). Grund: ~240k Baumeinträge (davon ~65k leere PBS-`.chunks`-Ordner) → monolithischer rsync ~5,5 GB RSS auf 8 GB-Pi (OOM). Einheiten: je Top-Level unter `/srv/nas`, `Backup/pbs2/{vm,ct,.chunks}`, je `Backup/<name>`. Resume über `backup.inprogress` + `.rtb_staged_done`. Fallback: `RTB_STAGED=0` → vanilla `rsync_tmbackup.sh`. Logs: `~/.rsync_tmbackup/<snap>-<unit>.log`.
+**Backup-rsync (Default `RTB_STAGED=1`):** `rtb_staged_backup.sh` führt **mehrere rsync-Läufe** in **einen** Snapshot aus (Hardlinks/`--link-dest` pro Teilpfad). Grund: ~240k Baumeinträge (davon ~65k leere PBS-`.chunks`-Ordner) → monolithischer rsync ~5,5 GB RSS auf 8 GB-Pi (OOM). Einheiten: je Top-Level unter `/srv/nas`, `Backup/pbs2/{vm,ct,.chunks}`, je `Backup/<name>`, **`pcloud-archive`/`pcloud-temp` automatisch gesplittet** wenn &gt; `RTB_STAGED_SPLIT_THRESHOLD` (Default 15000 Einträge). Resume über `backup.inprogress` + `.rtb_staged_done`. Fallback: `RTB_STAGED=0` → vanilla `rsync_tmbackup.sh`. Logs: `~/.rsync_tmbackup/<snap>-<unit>.log`.
 
 **Post-Filter (bei rsync/hybrid):** `rtb_check_only_delta.py --analyze` trennt Pipeline-Pfade von echten Nutzerdaten.
 

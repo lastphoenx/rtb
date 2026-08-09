@@ -103,6 +103,56 @@ rtb_staged_expand_backup_units() {
   done
 }
 
+# Einträge (Dateien+Ordner) unter root — grobe RAM-Prognose pro rsync-Einheit.
+rtb_staged_entry_count() {
+  find "$1" -xdev 2>/dev/null | wc -l
+}
+
+# Große Bäume (pcloud-archive: ~47k Ordner) nicht als ein Top-Level-rsync.
+RTB_STAGED_SPLIT_THRESHOLD=${RTB_STAGED_SPLIT_THRESHOLD:-15000}
+RTB_STAGED_TREE_SPLIT=${RTB_STAGED_TREE_SPLIT:-pcloud-archive pcloud-temp}
+
+rtb_staged_should_tree_split() {
+  local name="$1"
+  local pat
+  for pat in $RTB_STAGED_TREE_SPLIT; do
+    [[ "$name" == "$pat" ]] && return 0
+  done
+  return 1
+}
+
+rtb_staged_expand_tree_units() {
+  local tree_root="$1"
+  local rel_prefix="$2"
+  local -n _units_ref=$3
+  local total child name child_total grand
+  total=$(rtb_staged_entry_count "$tree_root")
+  if [[ "$total" -le "$RTB_STAGED_SPLIT_THRESHOLD" ]]; then
+    _units_ref+=("$rel_prefix")
+    return
+  fi
+  local child_count=0
+  for child in "$tree_root"/*/; do
+    [[ -d "$child" ]] || continue
+    child_count=$((child_count + 1))
+    name=$(basename "$child")
+    child_total=$(rtb_staged_entry_count "$child")
+    if [[ "$child_total" -gt "$RTB_STAGED_SPLIT_THRESHOLD" ]]; then
+      fn_log_info "Split $rel_prefix/$name ($child_total Einträge) — Unterordner"
+      for grand in "$child"/*/; do
+        [[ -d "$grand" ]] || continue
+        _units_ref+=("$rel_prefix/$name/$(basename "$grand")")
+      done
+    else
+      _units_ref+=("$rel_prefix/$name")
+    fi
+  done
+  if [[ "$child_count" -eq 0 ]]; then
+    fn_log_warn "Split nötig aber keine Unterordner unter $rel_prefix — ein Lauf"
+    _units_ref+=("$rel_prefix")
+  fi
+}
+
 rtb_staged_list_units() {
   local src="$1"
   local -n _out=$2
@@ -110,8 +160,11 @@ rtb_staged_list_units() {
   local name
   while IFS= read -r name; do
     [[ -z "$name" ]] && continue
+    [[ "$name" == "lost+found" ]] && continue
     if [[ "$name" == "Backup" ]]; then
       rtb_staged_expand_backup_units "$src/Backup" _out
+    elif rtb_staged_should_tree_split "$name"; then
+      rtb_staged_expand_tree_units "$src/$name" "$name" _out
     else
       _out+=("$name")
     fi
@@ -301,13 +354,18 @@ for unit in "${UNITS[@]}"; do
   unit_log="$LOG_DIR/$(basename "$DEST")-${unit//\//_}.log"
 
   # shellcheck disable=SC2086
-  if ! rsync $RSYNC_FLAGS \
+  set +e
+  rsync $RSYNC_FLAGS \
     --log-file "$unit_log" \
     "${exclude_opt[@]}" \
     "${link_dest_opt[@]}" \
-    -- "$src_path" "$dest_path" >>"$LOG_FILE" 2>&1; then
-    fn_log_error "rsync fehlgeschlagen für $unit — siehe $unit_log"
-    fn_log_error "Resume: erneut rtb_pool_wrapper.sh starten (gleicher Snapshot $DEST)"
+    -- "$src_path" "$dest_path" >>"$LOG_FILE" 2>&1
+  rsync_rc=$?
+  set -e
+  if [[ "$rsync_rc" -ne 0 ]]; then
+    fn_log_error "rsync exit $rsync_rc für $unit — siehe $unit_log"
+    fn_log_error "Kurz: grep -E 'rsync:|rsync error:' '$unit_log' | tail -20"
+    fn_log_error "Resume: rtb_staged_backup.sh erneut (oder rtb_pool_wrapper.sh --force)"
     exit 1
   fi
 
