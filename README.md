@@ -242,36 +242,33 @@ ein unnötiger Backup-Trigger oder im Extremfall eine **Backup-Loop**
 
 **Lösung — Zwei-Schicht-Schutz:**
 
-**Schicht 1: Statische `excludes.txt`** (echtes rsync_tmbackup — Pattern = **nie** ins Snapshot):
+**Schicht A: `excludes.txt`** (echtes rsync_tmbackup — Pattern wird **nie** ins Snapshot kopiert):
 ```text
-.cache/
-tmp/
-*.tmp
+.cache/  tmp/  *.tmp
 /restore/
-**/._*          # macOS AppleDouble
-__pycache__/    # Python-Bytecode
-*.py[cod]
+__pycache__/  *.py[cod]  **/._*
 ```
 
-**Schicht 1: `excludes.txt`** (rsync_tmbackup) — wird **nie** ins Snapshot kopiert:
-```text
-/restore/
-__pycache__/ …
-```
-
-**Schicht 2: `rtb_check_excludes.sh`** — nur Trigger: Pipeline-Pfade + Check-Logik.
+**Schicht B: `rtb_check_excludes.sh`** (nur Trigger-Check — **nicht** fürs echte Backup):
 ```text
 /pcloud-archive/   pcloud-archive/
 /pcloud-temp/      pcloud-temp/
 ```
-→ Änderungen dort **triggern kein Backup** allein, werden aber mitgesichert wenn ein anderes Delta RTB startet.
+→ Änderungen dort **triggern kein Backup** allein, werden aber **mitgesichert**, wenn z. B. Paperless ein Backup auslöst.
 
-**Trigger-Methode (August 2026):** Default `RTB_TRIGGER_MODE=signature` — vergleicht pro Top-Level-Ordner
-Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest` (**kein** `rsync -ni` Vollbaum).
-Auf mergerfs/Pi verhindert das OOM beim Trigger-Check. Fallback: `RTB_TRIGGER_MODE=rsync` oder `hybrid`.
+**Architektur-Regeln (August 2026, verbindlich):**
 
-**Backup-rsync:** `rsync_tmbackup.sh` bleibt **1:1 Upstream** ([laurent22/rsync-time-backup](https://github.com/laurent22/rsync-time-backup/blob/master/rsync_tmbackup.sh)).
-`rtb_pool_wrapper.sh` setzt per `--rsync-set-flags` Produktions-Flags **ohne** `--itemize-changes` (Upstream-Default würde jede Datei auf stdout schreiben).
+| Regel | Begründung |
+|-------|------------|
+| `rsync_tmbackup.sh` = **1:1 Upstream** ([laurent22/rsync-time-backup](https://github.com/laurent22/rsync-time-backup)) | Clone/Pull des Originals darf nicht brechen; keine Batch-Forks im Skript |
+| Anpassungen nur in **Wrappern** (`rtb_pool_wrapper.sh`, `rtb_check_excludes.sh`) | Flags, Logging, Trigger, Excludes — getrennt vom Upstream |
+| Produktions-rsync **ohne** `--itemize-changes` | Upstream druckt jede Datei auf stdout → bei 100k+ Dateien GB Log/RAM; Wrapper setzt `--rsync-set-flags` |
+| **Kein** `RTB_OOM_SCORE_ADJ` / `OOMScoreAdjust=500` | Hat rsync bei OOM gezielt getötet statt Backup durchlaufen zu lassen |
+| Trigger: `RTB_TRIGGER_MODE=signature` (Default) | Kein `rsync -ni` über ganzen `/srv/nas`-Baum (OOM beim Check) |
+
+**Trigger-Methode:** `rtb_trigger_signature.py` vergleicht pro Top-Level-Ordner Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest`. Fallback nur für Debug: `RTB_TRIGGER_MODE=rsync` oder `hybrid` (OOM-Risiko).
+
+**Backup-rsync:** Ein monolithischer Upstream-Lauf pro Snapshot (`--link-dest` auf vorheriges Snapshot). Wrapper-Flags ohne itemize; Details in `~/.rsync_tmbackup/*.log`.
 
 **Post-Filter (bei rsync/hybrid):** `rtb_check_only_delta.py --analyze` trennt Pipeline-Pfade von echten Nutzerdaten.
 
