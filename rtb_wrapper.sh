@@ -229,16 +229,20 @@ if [[ -n "$LAST" && -d "$LAST" ]]; then
   log "[check] Prüfe auf Änderungen seit letztem Snapshot..."
 
   set +e
-  rtb_detect_real_trigger_changes "${SRC}" "$LAST" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
+  rtb_backup_trigger_run_locked "${SRC}" "$LAST" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
   trigger_rc=$?
   set -e
 
   if [[ $trigger_rc -eq 2 ]]; then
     log "[error] Delta-Check fehlgeschlagen (rsync) - Backup abgebrochen"
     exit 2
-  elif [[ $trigger_rc -eq 0 ]]; then
+  elif [[ $trigger_rc -eq 1 ]]; then
     log "[info] Änderungen erkannt - starte Backup"
   else
+    if [[ $trigger_rc -eq 3 ]]; then
+      log "[check] Delta-Check busy (anderer Scan läuft, kein Cache) — überspringe Backup diesmal"
+      exit 0
+    fi
     log "[skip] Keine Änderungen seit letztem Backup - kein neuer Snapshot nötig"
     
     # Prüfe pCloud-Upload-Status für diesen Snapshot
