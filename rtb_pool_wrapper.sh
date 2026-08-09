@@ -236,9 +236,13 @@ if [[ -n "$LAST" && -d "$LAST" ]]; then
   log "[check] Prüfe auf Änderungen seit letztem Snapshot..."
 
   set +e
+  export RTB_TRIGGER_IN_BACKUP=1
   rtb_backup_trigger_run_locked "${SRC}" "$LAST" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
   trigger_rc=$?
-  set -e
+  unset RTB_TRIGGER_IN_BACKUP
+  set +e
+
+  log "[check] Delta-Check exit=$trigger_rc"
 
   if [[ $trigger_rc -eq 2 ]]; then
     log "[error] Delta-Check fehlgeschlagen (rsync) - Backup abgebrochen"

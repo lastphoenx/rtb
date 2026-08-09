@@ -196,7 +196,7 @@ rtb_trigger_delta_signature() {
     --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
     --top-n 10 2>&1)
   py_rc=$?
-  set -e
+  set +e
 
   if [[ $py_rc -ne 0 ]]; then
     [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] error → signature scan failed (exit $py_rc)"
@@ -379,25 +379,47 @@ rtb_detect_real_trigger_changes() {
   esac
 }
 
+# Kurz-Zusammenfassung aus Capture (auch bei RTB_CHECK_QUIET=1 ins Backup-Log).
+rtb_trigger_emit_capture_summary() {
+  local capture="$1" rc="$2"
+  if [[ -f "$capture" ]]; then
+    grep -E '^\[RTB (Signature|Wrapper)\]' "$capture" 2>/dev/null || true
+    if [[ "$rc" -eq 2 ]]; then
+      tail -15 "$capture" 2>/dev/null || true
+    fi
+  fi
+  case "$rc" in
+    0) echo "[RTB Trigger] no changes (exit 0)" ;;
+    1) echo "[RTB Trigger] changes detected (exit 1)" ;;
+    2) echo "[RTB Trigger] error (exit 2)" ;;
+    3) echo "[RTB Trigger] busy — no scan (exit 3)" ;;
+    *) echo "[RTB Trigger] exit=$rc" ;;
+  esac
+}
+
 # Produktion: Lock + Cache (15 min), kein Dashboard-Scope-Scan.
 # Exit: 0=keine Änderung, 1=Backup nötig, 2=Fehler, 3=busy (kein frischer Cache)
+# FD 8 für check_only — FD 9 ist nas_heavy_ops_lock (Kollision vermeiden).
 rtb_backup_trigger_run_locked() {
   local src="$1" last="$2" check_excl="$3" backup_excl="$4" script_dir="$5"
   local lock_file="${RTB_CHECK_ONLY_LOCKFILE:-/run/rtb_check_only.lock}"
   local cache_out="${RTB_CHECK_ONLY_CACHE:-/run/rtb_check_only_cache.out}"
   local cache_meta="${RTB_CHECK_ONLY_CACHE_META:-/run/rtb_check_only_cache.meta}"
+  local lock_fd="${RTB_CHECK_ONLY_LOCK_FD:-8}"
   local tmp_out rc
 
-  exec 9>"$lock_file"
-  if ! flock -n 9; then
+  eval "exec ${lock_fd}>\"${lock_file}\""
+  if ! flock -n "${lock_fd}"; then
     if rtb_check_only_cache_fresh "$last"; then
       rtb_check_only_serve_cache >/dev/null
       return $?
     fi
+    echo "[RTB Trigger] busy — check_only lock held, no fresh cache"
     return 3
   fi
 
-  if [[ -f "${script_dir}/nas_heavy_ops_lock.sh" ]]; then
+  # Innerhalb backup-pipeline: NAS-Lock bereits von uns gehalten — nicht „busy“ gegen uns selbst.
+  if [[ "${RTB_TRIGGER_IN_BACKUP:-0}" != "1" && -f "${script_dir}/nas_heavy_ops_lock.sh" ]]; then
     # shellcheck source=nas_heavy_ops_lock.sh
     source "${script_dir}/nas_heavy_ops_lock.sh"
     if nas_heavy_ops_is_busy; then
@@ -405,6 +427,7 @@ rtb_backup_trigger_run_locked() {
         rtb_check_only_serve_cache >/dev/null
         return $?
       fi
+      echo "[RTB Trigger] busy — NAS heavy ops lock, no fresh cache"
       return 3
     fi
   fi
@@ -415,11 +438,13 @@ rtb_backup_trigger_run_locked() {
   set +e
   rtb_trigger_delta_core "$src" "$last" "$check_excl" "$script_dir" | tee "$tmp_out"
   rc=${PIPESTATUS[0]}
-  set -e
+  set +e
   unset RTB_CHECK_QUIET
 
-  cp "$tmp_out" "$cache_out"
-  printf 'ts=%s\nexit=%s\nbaseline=%s\n' "$(date +%s)" "$rc" "$last" >"$cache_meta"
+  rtb_trigger_emit_capture_summary "$tmp_out" "$rc"
+
+  cp "$tmp_out" "$cache_out" || true
+  printf 'ts=%s\nexit=%s\nbaseline=%s\n' "$(date +%s)" "$rc" "$last" >"$cache_meta" || true
   chmod 0644 "$cache_out" "$cache_meta" 2>/dev/null || true
   rm -f "$tmp_out"
   return "$rc"
@@ -461,8 +486,9 @@ rtb_check_only_run_locked() {
   local cache_meta="${RTB_CHECK_ONLY_CACHE_META:-/run/rtb_check_only_cache.meta}"
   local tmp_out rc
 
-  exec 8>"$lock_file"
-  if ! flock -n 8; then
+  local lock_fd="${RTB_CHECK_ONLY_LOCK_FD:-8}"
+  eval "exec ${lock_fd}>\"${lock_file}\""
+  if ! flock -n "${lock_fd}"; then
     if rtb_check_only_cache_fresh "$last"; then
       echo "[RTB Wrapper] check_cached → serving cached result (another check still running)"
       rtb_check_only_serve_cache
@@ -491,9 +517,9 @@ rtb_check_only_run_locked() {
   set +e
   rtb_check_only_with_scope "$src" "$last" "$check_excl" "$backup_excl" "$script_dir" | tee "$tmp_out"
   rc=${PIPESTATUS[0]}
-  set -e
+  set +e
 
-  cp "$tmp_out" "$cache_out"
+  cp "$tmp_out" "$cache_out" || true
   printf 'ts=%s\nexit=%s\nbaseline=%s\n' "$(date +%s)" "$rc" "$last" >"$cache_meta"
   chmod 0644 "$cache_out" "$cache_meta" 2>/dev/null || true
   rm -f "$tmp_out"
@@ -511,7 +537,7 @@ rtb_check_only_with_scope() {
   set +e
   rtb_trigger_delta_core "$src" "$last" "$check_excl" "$script_dir"
   trigger_rc=$?
-  set -e
+  set +e
 
   if [[ "$emit_scope" != "1" ]] || ! command -v python3 &>/dev/null; then
     rtb_emit_exclude_policy_json "${backup_excl}" | while IFS= read -r line; do

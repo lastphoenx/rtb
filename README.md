@@ -217,7 +217,8 @@ bash rtb_pool_wrapper.sh --check-only
 # → exit 2 + "error"             = Scan fehlgeschlagen
 # → exit 3 + "check_busy"        = anderer Check läuft (kein frischer Cache)
 # Erfolg: Zeile [RTB Signature] scanned … files in …s (low-RAM)
-# Parallele Läufe: flock auf /run/rtb_check_only.lock; Cache /run/rtb_check_only_cache.*
+# Parallele Läufe: flock auf /run/rtb_check_only.lock (FD 8); NAS-Lock FD 9 — getrennt.
+# Produktion: RTB_TRIGGER_IN_BACKUP=1 — kein „busy“-Selbstblocker während backup-pipeline.
 
 # Systemd (backup-pipeline.service → rtb_pool_wrapper.sh)
 sudo systemctl status backup-pipeline.timer
