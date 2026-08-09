@@ -113,6 +113,41 @@ rtb_staged_entry_count() {
 RTB_STAGED_SPLIT_THRESHOLD=${RTB_STAGED_SPLIT_THRESHOLD:-15000}
 RTB_STAGED_TREE_SPLIT=${RTB_STAGED_TREE_SPLIT:-pcloud-archive pcloud-temp}
 
+# excludes.txt gilt auch beim Erzeugen der Staging-Einheiten (nicht nur beim rsync).
+RTB_STAGED_EXCLUDE_LINES=()
+
+rtb_staged_load_excludes() {
+  RTB_STAGED_EXCLUDE_LINES=()
+  [[ -n "$EXCLUSION_FILE" && -f "$EXCLUSION_FILE" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="${line// /}"
+    [[ -z "$line" ]] && continue
+    RTB_STAGED_EXCLUDE_LINES+=("$line")
+  done < "$EXCLUSION_FILE"
+}
+
+# Entspricht rsync --exclude-from für Unit-Pfade (relativ zu SRC_FOLDER).
+rtb_staged_rel_excluded() {
+  local rel="${1#/}"
+  local pat p suffix
+
+  for pat in "${RTB_STAGED_EXCLUDE_LINES[@]}"; do
+    if [[ "$pat" == /* ]]; then
+      p="${pat#/}"
+      p="${p%/}"
+      [[ "$rel" == "$p" || "$rel" == "$p"/* ]] && return 0
+      continue
+    fi
+    if [[ "$pat" == */ ]]; then
+      suffix="${pat%/}"
+      [[ "$rel" == "$suffix" || "$rel" == */"$suffix" || "$rel" == */"$suffix"/* ]] && return 0
+      continue
+    fi
+  done
+  return 1
+}
+
 rtb_staged_should_tree_split() {
   local name="$1"
   local pat
@@ -128,6 +163,12 @@ rtb_staged_emit_units() {
   local arr_name="$3"
   local -n _units=$arr_name
   local total child name child_count=0
+
+  rel_path="${rel_path#/}"
+  if rtb_staged_rel_excluded "$rel_path"; then
+    fn_log_info "skip (exclude): $rel_path"
+    return
+  fi
 
   total=$(rtb_staged_entry_count "$abs_root")
   if [[ "$total" -le "$RTB_STAGED_SPLIT_THRESHOLD" ]]; then
@@ -163,6 +204,10 @@ rtb_staged_list_units() {
   while IFS= read -r name; do
     [[ -z "$name" ]] && continue
     [[ "$name" == "lost+found" ]] && continue
+    if rtb_staged_rel_excluded "$name"; then
+      fn_log_info "skip (exclude): $name"
+      continue
+    fi
     if [[ "$name" == "Backup" ]]; then
       rtb_staged_expand_backup_units "$src/Backup" _out
     elif rtb_staged_should_tree_split "$name"; then
@@ -312,6 +357,7 @@ fi
 echo "$MYPID" >"$INPROGRESS_FILE"
 LOG_FILE="$LOG_DIR/$(basename "$DEST").log"
 
+rtb_staged_load_excludes
 UNITS=()
 rtb_staged_list_units "$SRC_FOLDER" UNITS
 
