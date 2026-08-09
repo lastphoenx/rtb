@@ -256,25 +256,22 @@ __pycache__/    # Python-Bytecode
 **Schicht 1: `excludes.txt`** (rsync_tmbackup) — wird **nie** ins Snapshot kopiert:
 ```text
 /restore/
-/pcloud-archive/   Pipeline-Manifeste (zu groß für rsync-RAM; liegen auf pCloud)
-/pcloud-temp/      Pipeline-Temp
 __pycache__/ …
 ```
 
-**Schicht 2: `rtb_check_excludes.sh`** — nur Trigger: dieselben Pipeline-Pfade + Check-Logik.
+**Schicht 2: `rtb_check_excludes.sh`** — nur Trigger: Pipeline-Pfade + Check-Logik.
 ```text
 /pcloud-archive/   pcloud-archive/
 /pcloud-temp/      pcloud-temp/
 ```
-→ Änderungen dort **triggern kein Backup** allein.
+→ Änderungen dort **triggern kein Backup** allein, werden aber mitgesichert wenn ein anderes Delta RTB startet.
 
 **Trigger-Methode (August 2026):** Default `RTB_TRIGGER_MODE=signature` — vergleicht pro Top-Level-Ordner
 Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest` (**kein** `rsync -ni` Vollbaum).
-Auf mergerfs/Pi verhindert das OOM (7+ GB RAM). Fallback: `RTB_TRIGGER_MODE=rsync` oder `hybrid`.
+Auf mergerfs/Pi verhindert das OOM beim Trigger-Check. Fallback: `RTB_TRIGGER_MODE=rsync` oder `hybrid`.
 
-**Backup-rsync (August 2026):** Default `RTB_RSYNC_BATCH_TOP_LEVEL=1` in `rtb_pool_wrapper.sh` —
-`rsync_tmbackup.sh --batch-top-level` führt **einen rsync pro Top-Level-Eintrag** unter `/srv/nas` aus
-(gleicher Snapshot, `--link-dest` pro Teilbaum). rsync kann Dateilisten nicht streamen; Batch = RAM ∝ Teilbaum, nicht ∝ gesamter NAS-Baum. Deaktivieren: `RTB_RSYNC_BATCH_TOP_LEVEL=0`.
+**Backup-rsync:** `rsync_tmbackup.sh` bleibt **1:1 Upstream** ([laurent22/rsync-time-backup](https://github.com/laurent22/rsync-time-backup/blob/master/rsync_tmbackup.sh)).
+`rtb_pool_wrapper.sh` setzt per `--rsync-set-flags` Produktions-Flags **ohne** `--itemize-changes` (Upstream-Default würde jede Datei auf stdout schreiben).
 
 **Post-Filter (bei rsync/hybrid):** `rtb_check_only_delta.py --analyze` trennt Pipeline-Pfade von echten Nutzerdaten.
 

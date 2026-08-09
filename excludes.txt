@@ -5,10 +5,11 @@
 #
 # A) DIESE DATEI (excludes.txt) — echtes Backup (rsync_tmbackup)
 #    Pattern hier = wird NIE ins RTB-Snapshot kopiert.
-#    Inkl. /pcloud-archive/, /pcloud-temp/ (Pipeline, RAM/Rsync).
 #
-# B) rtb_check_excludes.sh — NUR Delta-Check / Signature-Trigger
-#    Dieselben Pipeline-Pfade: Änderungen dort starten KEIN Backup allein.
+# B) rtb_check_excludes.sh — NUR Delta-Check (rsync -ni, „triggert Backup?“)
+#    Zusätzlich zu dieser Datei: /pcloud-archive/, /pcloud-temp/
+#    → Änderungen dort starten KEIN Backup allein,
+#      landen aber im Snapshot wenn z.B. Paperless ein Backup auslöst.
 #
 # Siehe rtb/README.md § Excludes & Backup Loop Prevention
 
@@ -31,11 +32,6 @@ venv/
 
 # Restore-/Download-Pfad (Backup-Loop vermeiden)
 /restore/
-
-# Pipeline-Artefakte auf mergerfs — nicht ins RTB (zu viele Dateien → rsync-RAM;
-# Manifeste liegen auf pCloud; triggern ohnehin kein Backup allein, s. rtb_check_excludes.sh)
-/pcloud-archive/
-/pcloud-temp/
 
 # macOS AppleDouble-Metadaten (nicht sichern — reduziert Pool/pCloud-Noise)
 **/._*

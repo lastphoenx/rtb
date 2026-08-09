@@ -153,9 +153,6 @@ if ! nas_heavy_ops_acquire "$WAIT_SEC"; then
   exit 0
 fi
 
-apply_oom_score_adj "${RTB_OOM_SCORE_ADJ:-500}"
-log "[oom] RTB/rsync oom_score_adj=${RTB_OOM_SCORE_ADJ:-500} (bei Speichermangel zuerst beendet)"
-
 log "[start] RTB"
 
 # ===== Upload-Only Shortcut ==========================================
@@ -300,20 +297,12 @@ fi
 if [[ "$SKIP_RTB_BACKUP" -eq 1 ]]; then
   log "[skip] RTB-Backup wird übersprungen (Snapshot bereits vorhanden)"
 else
+  # Upstream-Flags ohne --itemize-changes (RAM/Log nur im Wrapper steuern, nicht im Fork).
   RTB_BACKUP_RSYNC_FLAGS="${RTB_BACKUP_RSYNC_FLAGS:--D --numeric-ids --links --hard-links --one-file-system --times --recursive --perms --owner --group --stats}"
-  # Default: Batch pro Top-Level-Ordner (rsync-Dateiliste nicht für ganzen Baum im RAM).
-  RTB_RSYNC_BATCH_TOP_LEVEL=${RTB_RSYNC_BATCH_TOP_LEVEL:-1}
-  RTB_BATCH_ARGS=()
-  if [[ "$RTB_RSYNC_BATCH_TOP_LEVEL" == "1" ]]; then
-    RTB_BATCH_ARGS=(--batch-top-level)
-    log "[start] rsync_tmbackup batch=top-level (RAM: ein Teilbaum pro Lauf)"
-  else
-    log "[start] rsync_tmbackup monolithisch (RTB_RSYNC_BATCH_TOP_LEVEL=0)"
-  fi
-  log "[start] rsync_tmbackup (stdout → capture, nicht ins Wrapper-Tee)"
+  log "[start] rsync_tmbackup (upstream-Skript, Wrapper-Flags ohne itemize)"
   rtb_backup_out="$(mktemp /tmp/rtb_backup_capture.XXXXXX)"
   set +e
-  sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "${RTB_BATCH_ARGS[@]}" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
+  sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
   RTB_EXIT=$?
   grep -E '^rsync_tmbackup:' "$rtb_backup_out" || true
   if [[ $RTB_EXIT -ne 0 ]]; then

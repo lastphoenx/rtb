@@ -144,9 +144,6 @@ if ! nas_heavy_ops_acquire "$WAIT_SEC"; then
   exit 0
 fi
 
-apply_oom_score_adj "${RTB_OOM_SCORE_ADJ:-500}"
-log "[oom] RTB/rsync oom_score_adj=${RTB_OOM_SCORE_ADJ:-500} (bei Speichermangel zuerst beendet)"
-
 log "[start] RTB"
 
 # ===== Upload-Only Shortcut ==========================================

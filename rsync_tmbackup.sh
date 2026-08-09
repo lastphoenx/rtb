@@ -29,9 +29,6 @@ fn_terminate_script() {
 trap 'fn_terminate_script' SIGINT
 
 # -----------------------------------------------------------------------------
-# NOTE: Safety-Gate Check wird in rtb_wrapper.sh durchgeführt!
-# Dieses Script wird nur aufgerufen wenn Safety-Gate bereits OK war.
-# -----------------------------------------------------------------------------
 # Small utility functions for reducing code duplication
 # -----------------------------------------------------------------------------
 fn_display_usage() {
@@ -286,17 +283,8 @@ AUTO_DELETE_LOG="1"
 LOG_TO_DEST="0"
 EXPIRATION_STRATEGY="1:1 30:7 365:30"
 AUTO_EXPIRE="1"
-BATCH_TOP_LEVEL="0"
-# Top-Level-Namen, die im Batch-Modus gar nicht erst rsyncen (Pipeline, RAM).
-# Format: Doppelpunkt-getrennt. Default: pcloud-archive:pcloud-temp
-RTB_BATCH_SKIP_DIRS="${RTB_BATCH_SKIP_DIRS:-pcloud-archive:pcloud-temp}"
 
-# --itemize-changes nur auf Anfrage (RTB_RSYNC_ITEMIZE=1): jede Datei auf stdout
-# → bei ~100k+ Dateien (PBS chunks/mergerfs) mehrere GB RAM + Log-Flut.
-RSYNC_FLAGS="-D --numeric-ids --links --hard-links --one-file-system --times --recursive --perms --owner --group --stats"
-if [[ "${RTB_RSYNC_ITEMIZE:-0}" == "1" ]]; then
-	RSYNC_FLAGS="$RSYNC_FLAGS --itemize-changes --human-readable"
-fi
+RSYNC_FLAGS="-D --numeric-ids --links --hard-links --one-file-system --itemize-changes --times --recursive --perms --owner --group --stats --human-readable"
 
 while :; do
 	case $1 in
@@ -340,9 +328,6 @@ while :; do
 			;;
 		--no-auto-expire)
 			AUTO_EXPIRE="0"
-			;;
-		--batch-top-level)
-			BATCH_TOP_LEVEL="1"
 			;;
 		--)
 			shift
@@ -585,60 +570,14 @@ while : ; do
 		# We've already checked that $EXCLUSION_FILE doesn't contain a single quote
 		CMD="$CMD --exclude-from '$EXCLUSION_FILE'"
 	fi
+	CMD="$CMD $LINK_DEST_OPTION"
+	CMD="$CMD -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/' '$SSH_DEST_FOLDER_PREFIX$DEST/'"
+
+	fn_log_info "Running command:"
+	fn_log_info "$CMD"
 
 	fn_run_cmd "echo $MYPID > $INPROGRESS_FILE"
-
-	if [[ "$BATCH_TOP_LEVEL" == "1" ]]; then
-		# Streaming-Äquivalent für rsync: je Top-Level-Eintrag ein eigener Prozess.
-		# Dateiliste nur für Teilbaum → RAM ∝ Batch, nicht ∝ gesamter /srv/nas-Baum.
-		fn_log_info "Batch-Modus: top-level (RAM-sparend, ein rsync pro Eintrag)"
-		fn_run_cmd "mkdir -p -- '$DEST'"
-		batch_idx=0
-		batch_total=$(find "$SRC_FOLDER" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
-		while IFS= read -r -d '' entry; do
-			batch_idx=$((batch_idx + 1))
-			name="$(basename -- "$entry")"
-			skip_batch=0
-			IFS=':' read -r -a _skip_dirs <<< "$RTB_BATCH_SKIP_DIRS"
-			for _skip in "${_skip_dirs[@]}"; do
-				[[ -z "$_skip" ]] && continue
-				if [[ "$name" == "$_skip" ]]; then
-					skip_batch=1
-					break
-				fi
-			done
-			if [[ "$skip_batch" -eq 1 ]]; then
-				fn_log_info "Batch $batch_idx/$batch_total: $name — übersprungen (Pipeline, RTB_BATCH_SKIP_DIRS)"
-				continue
-			fi
-			link_batch=""
-			if [ -n "$PREVIOUS_DEST" ] && [ -e "$PREVIOUS_DEST/$name" ]; then
-				link_batch="--link-dest='$PREVIOUS_DEST/$name'"
-			fi
-			fn_log_info "Batch $batch_idx/$batch_total: $name"
-			if [ -d "$entry" ]; then
-				batch_cmd="$CMD $link_batch -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/$name/' '$SSH_DEST_FOLDER_PREFIX$DEST/$name/'"
-			else
-				batch_cmd="$CMD $link_batch -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/$name' '$SSH_DEST_FOLDER_PREFIX$DEST/$name'"
-			fi
-			fn_log_info "Running command:"
-			fn_log_info "$batch_cmd"
-			eval "$batch_cmd"
-			batch_rc=$?
-			if [[ "$batch_rc" -ne 0 ]] || grep -q "rsync error:" "$LOG_FILE" 2>/dev/null; then
-				fn_log_error "Rsync batch failed on: $name (exit $batch_rc)"
-				break
-			fi
-		done < <(find "$SRC_FOLDER" -mindepth 1 -maxdepth 1 -print0 2>/dev/null | sort -z)
-	else
-		CMD="$CMD $LINK_DEST_OPTION"
-		CMD="$CMD -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/' '$SSH_DEST_FOLDER_PREFIX$DEST/'"
-
-		fn_log_info "Running command:"
-		fn_log_info "$CMD"
-
-		eval $CMD
-	fi
+	eval $CMD
 
 	# -----------------------------------------------------------------------------
 	# Check if we ran out of space
