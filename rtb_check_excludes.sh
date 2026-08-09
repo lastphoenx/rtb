@@ -140,9 +140,9 @@ sys.exit(0 if n > 0 else 1)
 
 # rsync -ni gegen RTB latest. Ausgabe in Temp-Datei (nicht $() — große Deltas + stderr).
 # Setzt RTB_DELTA_FILE, RTB_DELTA_ERR, RTB_DELTA_RSYNC_RC. Caller räumt Temp-Dateien auf.
-# RTB_CHECK_MEMORY_MAX_MB (Default 2048): prlimit --as=… falls verfügbar.
+# RTB_CHECK_MEMORY_MAX_MB: optional prlimit --as=… (0/leer = aus). Schutz in Produktion via systemd MemoryMax.
 rtb_invoke_rsync_ni() {
-  local limit_mb="${RTB_CHECK_MEMORY_MAX_MB:-2048}"
+  local limit_mb="${RTB_CHECK_MEMORY_MAX_MB:-0}"
   if command -v prlimit &>/dev/null && [[ "$limit_mb" =~ ^[0-9]+$ ]] && (( limit_mb > 0 )); then
     prlimit --as="$((limit_mb * 1024 * 1024))" "$@"
   else
