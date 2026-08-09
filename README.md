@@ -264,6 +264,10 @@ __pycache__/    # Python-Bytecode
 Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest` (**kein** `rsync -ni` Vollbaum).
 Auf mergerfs/Pi verhindert das OOM (7+ GB RAM). Fallback: `RTB_TRIGGER_MODE=rsync` oder `hybrid`.
 
+**Backup-rsync (August 2026):** Default `RTB_RSYNC_BATCH_TOP_LEVEL=1` in `rtb_pool_wrapper.sh` —
+`rsync_tmbackup.sh --batch-top-level` führt **einen rsync pro Top-Level-Eintrag** unter `/srv/nas` aus
+(gleicher Snapshot, `--link-dest` pro Teilbaum). rsync kann Dateilisten nicht streamen; Batch = RAM ∝ Teilbaum, nicht ∝ gesamter NAS-Baum. Deaktivieren: `RTB_RSYNC_BATCH_TOP_LEVEL=0`.
+
 **Post-Filter (bei rsync/hybrid):** `rtb_check_only_delta.py --analyze` trennt Pipeline-Pfade von echten Nutzerdaten.
 
 | Dashboard (monitoring-dashboard) | JSON-Quelle (`--check-only`) | Bedeutung |

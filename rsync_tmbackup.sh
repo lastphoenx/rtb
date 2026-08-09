@@ -286,6 +286,7 @@ AUTO_DELETE_LOG="1"
 LOG_TO_DEST="0"
 EXPIRATION_STRATEGY="1:1 30:7 365:30"
 AUTO_EXPIRE="1"
+BATCH_TOP_LEVEL="0"
 
 # --itemize-changes nur auf Anfrage (RTB_RSYNC_ITEMIZE=1): jede Datei auf stdout
 # → bei ~100k+ Dateien (PBS chunks/mergerfs) mehrere GB RAM + Log-Flut.
@@ -336,6 +337,9 @@ while :; do
 			;;
 		--no-auto-expire)
 			AUTO_EXPIRE="0"
+			;;
+		--batch-top-level)
+			BATCH_TOP_LEVEL="1"
 			;;
 		--)
 			shift
@@ -578,14 +582,46 @@ while : ; do
 		# We've already checked that $EXCLUSION_FILE doesn't contain a single quote
 		CMD="$CMD --exclude-from '$EXCLUSION_FILE'"
 	fi
-	CMD="$CMD $LINK_DEST_OPTION"
-	CMD="$CMD -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/' '$SSH_DEST_FOLDER_PREFIX$DEST/'"
-
-	fn_log_info "Running command:"
-	fn_log_info "$CMD"
 
 	fn_run_cmd "echo $MYPID > $INPROGRESS_FILE"
-	eval $CMD
+
+	if [[ "$BATCH_TOP_LEVEL" == "1" ]]; then
+		# Streaming-Äquivalent für rsync: je Top-Level-Eintrag ein eigener Prozess.
+		# Dateiliste nur für Teilbaum → RAM ∝ Batch, nicht ∝ gesamter /srv/nas-Baum.
+		fn_log_info "Batch-Modus: top-level (RAM-sparend, ein rsync pro Eintrag)"
+		fn_run_cmd "mkdir -p -- '$DEST'"
+		batch_idx=0
+		batch_total=$(find "$SRC_FOLDER" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+		while IFS= read -r -d '' entry; do
+			batch_idx=$((batch_idx + 1))
+			name="$(basename -- "$entry")"
+			link_batch=""
+			if [ -n "$PREVIOUS_DEST" ] && [ -e "$PREVIOUS_DEST/$name" ]; then
+				link_batch="--link-dest='$PREVIOUS_DEST/$name'"
+			fi
+			fn_log_info "Batch $batch_idx/$batch_total: $name"
+			if [ -d "$entry" ]; then
+				batch_cmd="$CMD $link_batch -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/$name/' '$SSH_DEST_FOLDER_PREFIX$DEST/$name/'"
+			else
+				batch_cmd="$CMD $link_batch -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/$name' '$SSH_DEST_FOLDER_PREFIX$DEST/$name'"
+			fi
+			fn_log_info "Running command:"
+			fn_log_info "$batch_cmd"
+			eval "$batch_cmd"
+			if [ -n "$(grep "rsync error:" "$LOG_FILE")" ]; then
+				fn_log_error "Rsync batch failed on: $name"
+				break
+			fi
+		done < <(find "$SRC_FOLDER" -mindepth 1 -maxdepth 1 -print0 2>/dev/null | sort -z)
+	else
+		CMD="$CMD $LINK_DEST_OPTION"
+		CMD="$CMD -- '$SSH_SRC_FOLDER_PREFIX$SRC_FOLDER/' '$SSH_DEST_FOLDER_PREFIX$DEST/'"
+
+		fn_log_info "Running command:"
+		fn_log_info "$CMD"
+
+		eval $CMD
+	fi
 
 	# -----------------------------------------------------------------------------
 	# Check if we ran out of space
