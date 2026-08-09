@@ -378,20 +378,27 @@ for unit in "${UNITS[@]}"; do
     continue
   fi
 
-  src_path="$SRC_FOLDER/$unit/"
-  dest_path="$DEST/$unit/"
-  if [[ ! -d "$src_path" ]]; then
+  src_entry="$SRC_FOLDER/$unit"
+  link_dest_opt=()
+  if [[ -f "$src_entry" ]]; then
+    src_path="$src_entry"
+    dest_path="$DEST/"
+    if [[ -n "$PREVIOUS_DEST" && -f "$PREVIOUS_DEST/$unit" ]]; then
+      link_dest_opt=(--link-dest="$PREVIOUS_DEST")
+    fi
+  elif [[ -d "$src_entry" ]]; then
+    src_path="$src_entry/"
+    dest_path="$DEST/$unit/"
+    if [[ -n "$PREVIOUS_DEST" && -d "$PREVIOUS_DEST/$unit" ]]; then
+      link_dest_opt=(--link-dest="$PREVIOUS_DEST/$unit")
+    fi
+  else
     fn_log_warn "[$unit_idx/${#UNITS[@]}] Quelle fehlt, überspringe: $unit"
     rtb_mark_unit_done "$unit"
     continue
   fi
 
-  mkdir -p "$(dirname "$dest_path")"
-  link_dest_opt=()
-  prev_unit="$PREVIOUS_DEST/$unit"
-  if [[ -n "$PREVIOUS_DEST" && -d "$prev_unit" ]]; then
-    link_dest_opt=(--link-dest="$prev_unit")
-  fi
+  mkdir -p "$dest_path"
 
   exclude_opt=()
   if [[ -n "$EXCLUSION_FILE" && -f "$EXCLUSION_FILE" ]]; then
