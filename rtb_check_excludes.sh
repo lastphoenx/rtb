@@ -177,11 +177,132 @@ rtb_delta_itemize_lines() {
   grep -E '^[<>ch*.]' "${1:?}" || true
 }
 
-# Ein rsync -ni (check_excludes) + Python-Filter: 0=keine Änderung, 1=Backup nötig, 2=Fehler
-rtb_trigger_delta_core() {
+# Low-RAM Trigger: Bucket-Signaturen (Dateianzahl/Bytes/mtime) statt rsync -ni über ganzen Baum.
+# Exit: 0=keine Änderung, 1=Backup nötig, 2=Fehler
+rtb_trigger_delta_signature() {
+  local src="$1" last="$2" check_excl="$3" script_dir="$4"
+  local quiet="${RTB_CHECK_QUIET:-0}"
+  local json py_rc delta_json pipe_json
+
+  if ! command -v python3 &>/dev/null; then
+    [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] error → python3 required for signature trigger"
+    return 2
+  fi
+
+  set +e
+  json=$(python3 "${script_dir}/rtb_trigger_signature.py" \
+    --src "$src" --snapshot "$last" \
+    --exclude-file "$check_excl" \
+    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    --top-n 10 2>&1)
+  py_rc=$?
+  set -e
+
+  if [[ $py_rc -ne 0 ]]; then
+    [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] error → signature scan failed (exit $py_rc)"
+    [[ "$quiet" != "1" ]] && echo "$json"
+    return 2
+  fi
+
+  if echo "$json" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('has_real_trigger') else 1)" 2>/dev/null; then
+    [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] changes_detected → Backup needed (signature diff on user buckets)"
+    if [[ "$quiet" != "1" ]]; then
+      delta_json=$(echo "$json" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['trigger_real']))" 2>/dev/null || true)
+      [[ -n "$delta_json" ]] && echo "[RTB Delta JSON] ${delta_json}"
+      echo "$json" | python3 -c "
+import json,sys
+s=json.load(sys.stdin).get('scan',{})
+print(f\"[RTB Signature] scanned {s.get('files_src','?')} src / {s.get('files_snap','?')} snap files in {s.get('duration_sec','?')}s\")
+" 2>/dev/null || true
+    fi
+    return 1
+  fi
+
+  if echo "$json" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('dirty_pipeline_buckets') else 1)" 2>/dev/null; then
+    [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] no_changes → No backup needed (only pipeline buckets differ)"
+    if [[ "$quiet" != "1" ]]; then
+      pipe_json=$(echo "$json" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['trigger_pipeline_only']))" 2>/dev/null || true)
+      [[ -n "$pipe_json" ]] && echo "[RTB PipelineOnly JSON] ${pipe_json}"
+    fi
+  else
+    [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] no_changes → No backup needed (source == latest snapshot)"
+  fi
+  if [[ "$quiet" != "1" ]]; then
+    echo "$json" | python3 -c "
+import json,sys
+s=json.load(sys.stdin).get('scan',{})
+print(f\"[RTB Signature] scanned {s.get('files_src','?')} src / {s.get('files_snap','?')} snap files in {s.get('duration_sec','?')}s\")
+" 2>/dev/null || true
+  fi
+  return 0
+}
+
+# Optional: Signature + rsync -ni nur auf geänderten Top-Level-Buckets (RTB_TRIGGER_MODE=hybrid).
+rtb_trigger_delta_hybrid() {
+  local src="$1" last="$2" check_excl="$3" script_dir="$4"
+  local quiet="${RTB_CHECK_QUIET:-0}"
+  local json dirty delta_file delta_err rsync_rc combined
+
+  if ! command -v python3 &>/dev/null; then
+    rtb_trigger_delta_rsync_full "$@"
+    return $?
+  fi
+
+  json=$(python3 "${script_dir}/rtb_trigger_signature.py" \
+    --src "$src" --snapshot "$last" \
+    --exclude-file "$check_excl" \
+    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    --top-n 10 2>/dev/null) || return 2
+
+  if ! echo "$json" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('has_real_trigger') else 1)" 2>/dev/null; then
+    rtb_trigger_delta_signature "$@"
+    return $?
+  fi
+
+  dirty=$(echo "$json" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin).get('dirty_real_buckets',[])))" 2>/dev/null)
+  [[ -z "$dirty" ]] && return 1
+
+  combined="$(mktemp /tmp/rtb_check_hybrid_out.XXXXXX)"
+  : >"$combined"
+  for bucket in $dirty; do
+    local sub_src sub_last
+    if [[ "$bucket" == "." ]]; then
+      [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] hybrid → rsync confirm root files (unusual)"
+      continue
+    fi
+    sub_src="${src%/}/${bucket}"
+    sub_last="${last%/}/${bucket}"
+    [[ -d "$sub_src" || -d "$sub_last" ]] || continue
+    rtb_run_delta_rsync_ni "$sub_src" "$sub_last" "$check_excl"
+    delta_file="$RTB_DELTA_FILE"
+    delta_err="$RTB_DELTA_ERR"
+    rsync_rc=$RTB_DELTA_RSYNC_RC
+    if [[ $rsync_rc -ne 0 ]]; then
+      rm -f "$combined" "$delta_file" "$delta_err" || true
+      [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] error → rsync confirm failed on bucket ${bucket} (exit $rsync_rc)"
+      return 2
+    fi
+    cat "$delta_file" >>"$combined"
+    rm -f "$delta_file" "$delta_err" || true
+  done
+
+  if rtb_analyze_trigger_file "$combined" "${script_dir}" "${last}"; then
+    rm -f "$combined" || true
+    [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] changes_detected → Backup needed (hybrid rsync confirm)"
+    return 1
+  fi
+  rm -f "$combined" || true
+  [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] changes_detected → Backup needed (signature; rsync confirm inconclusive)"
+  return 1
+}
+
+# Legacy: ein rsync -ni über gesamten Baum (OOM-Risiko auf großen mergerfs-Bäumen).
+rtb_trigger_delta_rsync_full() {
   local src="$1" last="$2" check_excl="$3" script_dir="$4"
   local delta_file delta_err rsync_rc quiet="${RTB_CHECK_QUIET:-0}"
   local analysis_json delta_json pipe_json
+
+  [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] warn → full-tree rsync -ni (RTB_TRIGGER_MODE=rsync); high RAM use"
 
   rtb_run_delta_rsync_ni "$src" "$last" "$check_excl"
   delta_file="$RTB_DELTA_FILE"
@@ -228,6 +349,20 @@ rtb_trigger_delta_core() {
   fi
   rm -f "$delta_file" "$delta_err" || true
   return 0
+}
+
+# RTB_TRIGGER_MODE: signature (default) | hybrid | rsync
+rtb_trigger_delta_core() {
+  local mode="${RTB_TRIGGER_MODE:-signature}"
+  case "$mode" in
+    signature) rtb_trigger_delta_signature "$@" ;;
+    hybrid) rtb_trigger_delta_hybrid "$@" ;;
+    rsync|full) rtb_trigger_delta_rsync_full "$@" ;;
+    *)
+      echo "[RTB Wrapper] error → unknown RTB_TRIGGER_MODE=${mode}" >&2
+      return 2
+      ;;
+  esac
 }
 
 # Produktion (Legacy-Exit): 0=Änderungen, 1=nein, 2=Fehler — nutzt intern nur noch einen Scan.
@@ -385,45 +520,26 @@ rtb_check_only_with_scope() {
     return "$trigger_rc"
   fi
 
-  # Backup-Scope nur für --check-only / Dashboard (zweiter Scan — nicht in Produktion)
-  scope_file="$(mktemp /tmp/rtb_check_scope_out.XXXXXX)"
-  scope_err="$(mktemp /tmp/rtb_check_scope_err.XXXXXX)"
-  set +e
-  if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
-    rtb_invoke_rsync_ni sudo -n rsync -ni --delete \
-      --links --hard-links --one-file-system --times --recursive \
-      --perms --owner --group \
-      --exclude-from "${backup_excl}" \
-      "${src}/" "${last}/" >"$scope_file" 2>"$scope_err"
-  else
-    rtb_invoke_rsync_ni rsync -ni --delete \
-      --links --hard-links --one-file-system --times --recursive \
-      --perms --owner --group \
-      --exclude-from "${backup_excl}" \
-      "${src}/" "${last}/" >"$scope_file" 2>"$scope_err"
-  fi
-  set -e
-  if rtb_delta_itemize_lines "$scope_file" | grep -q .; then
-    scope_json=$(rtb_delta_itemize_lines "$scope_file" | python3 "${script_dir}/rtb_check_only_delta.py" \
-      --top-n 15 --kind backup_scope "${last}" 2>/dev/null || true)
+  # Backup-Scope für Dashboard: Signature (kein rsync -ni über ganzen Baum)
+  if command -v python3 &>/dev/null; then
+    scope_json=$(python3 "${script_dir}/rtb_trigger_signature.py" \
+      --src "$src" --snapshot "$last" \
+      --exclude-file "$backup_excl" \
+      --kind backup_scope --top-n 15 2>/dev/null || true)
     if [[ -n "$scope_json" ]]; then
-      echo "[RTB BackupScope JSON] ${scope_json}"
-    fi
-    if [[ $trigger_rc -eq 0 ]] && rtb_scope_json_has_user_delta "$scope_json"; then
-      echo "[RTB Wrapper] changes_detected → Backup needed (Nutzerdaten laut Backup-Scope)"
-      trigger_rc=1
-      if rtb_analyze_trigger_file "$scope_file" "${script_dir}" "${last}"; then
-        analysis_json=$(rtb_emit_trigger_analysis_from_file "$scope_file" "${script_dir}" "${last}")
-        if [[ -n "$analysis_json" ]]; then
-          delta_json=$(echo "$analysis_json" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['trigger_real']))" 2>/dev/null || true)
-          if [[ -n "$delta_json" ]]; then
-            echo "[RTB Delta JSON] ${delta_json}"
-          fi
-        fi
+      echo "$scope_json" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+bs=d.get('backup_scope')
+if bs:
+    print('[RTB BackupScope JSON] ' + json.dumps(bs, ensure_ascii=False))
+" 2>/dev/null || true
+      if [[ $trigger_rc -eq 0 ]] && echo "$scope_json" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('has_changes') else 1)" 2>/dev/null; then
+        echo "[RTB Wrapper] changes_detected → Backup needed (Nutzerdaten laut Backup-Scope-Signature)"
+        trigger_rc=1
       fi
     fi
   fi
-  rm -f "$scope_file" "$scope_err" || true
 
   rtb_emit_exclude_policy_json "${backup_excl}" | while IFS= read -r line; do
     [[ -n "$line" ]] && echo "[RTB ExcludePolicy JSON] ${line}"
