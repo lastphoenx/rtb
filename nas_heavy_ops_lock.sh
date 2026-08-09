@@ -70,6 +70,29 @@ nas_heavy_ops_active_units() {
   return 1
 }
 
+# Erlaubtes lokales Stundenfenster (z. B. NAS_HEAVY_OPS_ALLOW_HOURS=02-06).
+# Leer = immer erlaubt. Endstunde exklusiv (02-06 = 02:00–05:59).
+nas_heavy_ops_in_allow_window() {
+  local spec="${NAS_HEAVY_OPS_ALLOW_HOURS:-}"
+  [[ -z "$spec" ]] && return 0
+  local now_h
+  now_h=$(date +%H)
+  now_h=$((10#$now_h))
+  local start end
+  if [[ "$spec" =~ ^([0-9]{1,2})-([0-9]{1,2})$ ]]; then
+    start=$((10#${BASH_REMATCH[1]}))
+    end=$((10#${BASH_REMATCH[2]}))
+  else
+    return 0
+  fi
+  if (( start <= end )); then
+    (( now_h >= start && now_h < end )) && return 0
+  else
+    (( now_h >= start || now_h < end )) && return 0
+  fi
+  return 1
+}
+
 # oom_score_adj: -1000..1000 (höher = bei OOM eher gekillt). Kinder erben vom Parent.
 apply_oom_score_adj() {
   local adj="${1:-0}"
