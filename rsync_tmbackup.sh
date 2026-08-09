@@ -287,6 +287,9 @@ LOG_TO_DEST="0"
 EXPIRATION_STRATEGY="1:1 30:7 365:30"
 AUTO_EXPIRE="1"
 BATCH_TOP_LEVEL="0"
+# Top-Level-Namen, die im Batch-Modus gar nicht erst rsyncen (Pipeline, RAM).
+# Format: Doppelpunkt-getrennt. Default: pcloud-archive:pcloud-temp
+RTB_BATCH_SKIP_DIRS="${RTB_BATCH_SKIP_DIRS:-pcloud-archive:pcloud-temp}"
 
 # --itemize-changes nur auf Anfrage (RTB_RSYNC_ITEMIZE=1): jede Datei auf stdout
 # → bei ~100k+ Dateien (PBS chunks/mergerfs) mehrere GB RAM + Log-Flut.
@@ -595,6 +598,19 @@ while : ; do
 		while IFS= read -r -d '' entry; do
 			batch_idx=$((batch_idx + 1))
 			name="$(basename -- "$entry")"
+			skip_batch=0
+			IFS=':' read -r -a _skip_dirs <<< "$RTB_BATCH_SKIP_DIRS"
+			for _skip in "${_skip_dirs[@]}"; do
+				[[ -z "$_skip" ]] && continue
+				if [[ "$name" == "$_skip" ]]; then
+					skip_batch=1
+					break
+				fi
+			done
+			if [[ "$skip_batch" -eq 1 ]]; then
+				fn_log_info "Batch $batch_idx/$batch_total: $name — übersprungen (Pipeline, RTB_BATCH_SKIP_DIRS)"
+				continue
+			fi
 			link_batch=""
 			if [ -n "$PREVIOUS_DEST" ] && [ -e "$PREVIOUS_DEST/$name" ]; then
 				link_batch="--link-dest='$PREVIOUS_DEST/$name'"
@@ -608,8 +624,9 @@ while : ; do
 			fn_log_info "Running command:"
 			fn_log_info "$batch_cmd"
 			eval "$batch_cmd"
-			if [ -n "$(grep "rsync error:" "$LOG_FILE")" ]; then
-				fn_log_error "Rsync batch failed on: $name"
+			batch_rc=$?
+			if [[ "$batch_rc" -ne 0 ]] || grep -q "rsync error:" "$LOG_FILE" 2>/dev/null; then
+				fn_log_error "Rsync batch failed on: $name (exit $batch_rc)"
 				break
 			fi
 		done < <(find "$SRC_FOLDER" -mindepth 1 -maxdepth 1 -print0 2>/dev/null | sort -z)

@@ -253,12 +253,20 @@ __pycache__/    # Python-Bytecode
 *.py[cod]
 ```
 
-**Schicht 2: `rtb_check_excludes.sh`** (nur Backup-**Trigger** — **zusätzlich** zu excludes.txt):
+**Schicht 1: `excludes.txt`** (rsync_tmbackup) — wird **nie** ins Snapshot kopiert:
+```text
+/restore/
+/pcloud-archive/   Pipeline-Manifeste (zu groß für rsync-RAM; liegen auf pCloud)
+/pcloud-temp/      Pipeline-Temp
+__pycache__/ …
+```
+
+**Schicht 2: `rtb_check_excludes.sh`** — nur Trigger: dieselben Pipeline-Pfade + Check-Logik.
 ```text
 /pcloud-archive/   pcloud-archive/
 /pcloud-temp/      pcloud-temp/
 ```
-→ Änderungen dort **triggern kein Backup**, werden aber **mitgesichert** wenn z.B. Paperless ein Backup auslöst.
+→ Änderungen dort **triggern kein Backup** allein.
 
 **Trigger-Methode (August 2026):** Default `RTB_TRIGGER_MODE=signature` — vergleicht pro Top-Level-Ordner
 Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest` (**kein** `rsync -ni` Vollbaum).
