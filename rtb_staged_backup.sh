@@ -86,20 +86,21 @@ fn_expire_backups() {
 # --- Staging units ---
 rtb_staged_expand_backup_units() {
   local backup_root="$1"
-  local -n _units_ref=$2
+  local arr_name="$2"
+  local -n _units=$arr_name
   local pbs2="$backup_root/pbs2"
   if [[ -d "$pbs2" ]]; then
-    [[ -d "$pbs2/vm" ]] && _units_ref+=("Backup/pbs2/vm")
-    [[ -d "$pbs2/ct" ]] && _units_ref+=("Backup/pbs2/ct")
-    [[ -d "$pbs2/.chunks" ]] && _units_ref+=("Backup/pbs2/.chunks")
-    [[ -d "$pbs2/ns" ]] && _units_ref+=("Backup/pbs2/ns")
+    [[ -d "$pbs2/vm" ]] && _units+=("Backup/pbs2/vm")
+    [[ -d "$pbs2/ct" ]] && _units+=("Backup/pbs2/ct")
+    [[ -d "$pbs2/.chunks" ]] && _units+=("Backup/pbs2/.chunks")
+    [[ -d "$pbs2/ns" ]] && _units+=("Backup/pbs2/ns")
   fi
   local sub name
   for sub in "$backup_root"/*/; do
     [[ -e "$sub" ]] || continue
     name=$(basename "$sub")
     [[ "$name" == "pbs2" ]] && continue
-    _units_ref+=("Backup/$name")
+    _units+=("Backup/$name")
   done
 }
 
@@ -124,12 +125,13 @@ rtb_staged_should_tree_split() {
 rtb_staged_emit_units() {
   local abs_root="$1"
   local rel_path="$2"
-  local -n _units_ref=$3
+  local arr_name="$3"
+  local -n _units=$arr_name
   local total child name child_count=0
 
   total=$(rtb_staged_entry_count "$abs_root")
   if [[ "$total" -le "$RTB_STAGED_SPLIT_THRESHOLD" ]]; then
-    _units_ref+=("$rel_path")
+    _units+=("$rel_path")
     return
   fi
 
@@ -137,12 +139,12 @@ rtb_staged_emit_units() {
     [[ -d "$child" ]] || continue
     child_count=$((child_count + 1))
     name=$(basename "$child")
-    rtb_staged_emit_units "$child" "$rel_path/$name" _units_ref
+    rtb_staged_emit_units "$child" "$rel_path/$name" "$arr_name"
   done
 
   if [[ "$child_count" -eq 0 ]]; then
     fn_log_warn "$rel_path: $total Einträge ohne Unterordner — ein Lauf (OOM-Risiko)"
-    _units_ref+=("$rel_path")
+    _units+=("$rel_path")
     return
   fi
 
