@@ -287,7 +287,12 @@ LOG_TO_DEST="0"
 EXPIRATION_STRATEGY="1:1 30:7 365:30"
 AUTO_EXPIRE="1"
 
-RSYNC_FLAGS="-D --numeric-ids --links --hard-links --one-file-system --itemize-changes --times --recursive --perms --owner --group --stats --human-readable"
+# --itemize-changes nur auf Anfrage (RTB_RSYNC_ITEMIZE=1): jede Datei auf stdout
+# → bei ~100k+ Dateien (PBS chunks/mergerfs) mehrere GB RAM + Log-Flut.
+RSYNC_FLAGS="-D --numeric-ids --links --hard-links --one-file-system --times --recursive --perms --owner --group --stats"
+if [[ "${RTB_RSYNC_ITEMIZE:-0}" == "1" ]]; then
+	RSYNC_FLAGS="$RSYNC_FLAGS --itemize-changes --human-readable"
+fi
 
 while :; do
 	case $1 in

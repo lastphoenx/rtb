@@ -287,11 +287,18 @@ fi
 if [[ "$SKIP_RTB_BACKUP" -eq 1 ]]; then
   log "[skip] RTB-Backup wird übersprungen (Snapshot bereits vorhanden)"
 else
-  # (optional sanfter: ionice/nice davor setzen)
+  RTB_BACKUP_RSYNC_FLAGS="${RTB_BACKUP_RSYNC_FLAGS:--D --numeric-ids --links --hard-links --one-file-system --times --recursive --perms --owner --group --stats}"
+  rtb_backup_out="$(mktemp /tmp/rtb_backup_capture.XXXXXX)"
   set +e
-  sudo bash "$RTB_SCRIPT" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL"
+  sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
   RTB_EXIT=$?
-  set -e
+  grep -E '^rsync_tmbackup:' "$rtb_backup_out" || true
+  if [[ $RTB_EXIT -ne 0 ]]; then
+    log "[error] rsync_tmbackup Ausgabe (Auszug):"
+    tail -40 "$rtb_backup_out" || true
+  fi
+  rm -f "$rtb_backup_out"
+  set +e
 
   if [[ $RTB_EXIT -ne 0 ]]; then
     log "[ABORT] RTB fehlgeschlagen (Exit $RTB_EXIT) - pCloud-Sync wird übersprungen"
