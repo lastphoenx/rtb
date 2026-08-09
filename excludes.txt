@@ -33,5 +33,10 @@ venv/
 # Restore-/Download-Pfad (Backup-Loop vermeiden)
 /restore/
 
+# pCloud-Pipeline: JSON-Upload-Scratch (pro pCloud-folderid ein Temp-Ordner, ~47k leere Hüllen).
+# Kein Nutzdaten-Bestand; kanonisch unter /srv/pcloud-archive/staging/ (nicht im RTB-Baum).
+# Resume-State liegt unter /srv/pcloud-archive/resume/ (bleibt auf SSD2, wird nicht RTB-gesichert).
+/pcloud-archive/staging/
+
 # macOS AppleDouble-Metadaten (nicht sichern — reduziert Pool/pCloud-Noise)
 **/._*
