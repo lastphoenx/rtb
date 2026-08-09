@@ -15,6 +15,9 @@ source "${SCRIPT_DIR}/nas_heavy_ops_lock.sh"
 SRC=${SRC:-/srv/nas}
 RTB=${RTB:-/mnt/backup/rtb_nas}
 RTB_SCRIPT=${RTB_SCRIPT:-/opt/apps/rtb/rsync_tmbackup.sh}
+RTB_STAGED_SCRIPT=${RTB_STAGED_SCRIPT:-/opt/apps/rtb/rtb_staged_backup.sh}
+# 1 = mehrere rsync-Einheiten pro Snapshot (RAM ~600 MB/Einheit statt ~5 GB+ monolithisch)
+RTB_STAGED=${RTB_STAGED:-1}
 RTB_EXCL=${RTB_EXCL:-/opt/apps/rtb/excludes.txt}
 RTB_AUTO_EXCLUDE_RESTORE=${RTB_AUTO_EXCLUDE_RESTORE:-1}
 RTB_RESTORE_EXCLUDE_PATTERN=${RTB_RESTORE_EXCLUDE_PATTERN:-/restore/}
@@ -299,12 +302,17 @@ if [[ "$SKIP_RTB_BACKUP" -eq 1 ]]; then
 else
   # Upstream-Flags ohne --itemize-changes (RAM/Log nur im Wrapper steuern, nicht im Fork).
   RTB_BACKUP_RSYNC_FLAGS="${RTB_BACKUP_RSYNC_FLAGS:--D --numeric-ids --links --hard-links --one-file-system --times --recursive --perms --owner --group --stats}"
-  log "[start] rsync_tmbackup (upstream-Skript, Wrapper-Flags ohne itemize)"
   rtb_backup_out="$(mktemp /tmp/rtb_backup_capture.XXXXXX)"
   set +e
-  sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
+  if [[ "$RTB_STAGED" == "1" && -x "$RTB_STAGED_SCRIPT" ]]; then
+    log "[start] rtb_staged_backup (mehrere rsync-Einheiten, RAM-schonend)"
+    sudo bash "$RTB_STAGED_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
+  else
+    log "[start] rsync_tmbackup (upstream-Skript, Wrapper-Flags ohne itemize)"
+    sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
+  fi
   RTB_EXIT=$?
-  grep -E '^rsync_tmbackup:' "$rtb_backup_out" || true
+  grep -E '^(rsync_tmbackup|rtb_staged_backup):' "$rtb_backup_out" || true
   if [[ $RTB_EXIT -ne 0 ]]; then
     log "[error] rsync_tmbackup Ausgabe (Auszug):"
     tail -40 "$rtb_backup_out" || true

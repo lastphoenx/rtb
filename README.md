@@ -261,14 +261,14 @@ __pycache__/  *.py[cod]  **/._*
 | Regel | Begründung |
 |-------|------------|
 | `rsync_tmbackup.sh` = **1:1 Upstream** ([laurent22/rsync-time-backup](https://github.com/laurent22/rsync-time-backup)) | Clone/Pull des Originals darf nicht brechen; keine Batch-Forks im Skript |
-| Anpassungen nur in **Wrappern** (`rtb_pool_wrapper.sh`, `rtb_check_excludes.sh`) | Flags, Logging, Trigger, Excludes — getrennt vom Upstream |
+| Anpassungen nur in **Wrappern** (`rtb_pool_wrapper.sh`, `rtb_staged_backup.sh`, `rtb_check_excludes.sh`) | Flags, Logging, Trigger, Staging, Excludes — getrennt vom Upstream |
 | Produktions-rsync **ohne** `--itemize-changes` | Upstream druckt jede Datei auf stdout → bei 100k+ Dateien GB Log/RAM; Wrapper setzt `--rsync-set-flags` |
 | **Kein** `RTB_OOM_SCORE_ADJ` / `OOMScoreAdjust=500` | Hat rsync bei OOM gezielt getötet statt Backup durchlaufen zu lassen |
 | Trigger: `RTB_TRIGGER_MODE=signature` (Default) | Kein `rsync -ni` über ganzen `/srv/nas`-Baum (OOM beim Check) |
 
 **Trigger-Methode:** `rtb_trigger_signature.py` vergleicht pro Top-Level-Ordner Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest`. Fallback nur für Debug: `RTB_TRIGGER_MODE=rsync` oder `hybrid` (OOM-Risiko).
 
-**Backup-rsync:** Ein monolithischer Upstream-Lauf pro Snapshot (`--link-dest` auf vorheriges Snapshot). Wrapper-Flags ohne itemize; Details in `~/.rsync_tmbackup/*.log`.
+**Backup-rsync (Default `RTB_STAGED=1`):** `rtb_staged_backup.sh` führt **mehrere rsync-Läufe** in **einen** Snapshot aus (Hardlinks/`--link-dest` pro Teilpfad). Grund: ~240k Baumeinträge (davon ~65k leere PBS-`.chunks`-Ordner) → monolithischer rsync ~5,5 GB RSS auf 8 GB-Pi (OOM). Einheiten: je Top-Level unter `/srv/nas`, `Backup/pbs2/{vm,ct,.chunks}`, je `Backup/<name>`. Resume über `backup.inprogress` + `.rtb_staged_done`. Fallback: `RTB_STAGED=0` → vanilla `rsync_tmbackup.sh`. Logs: `~/.rsync_tmbackup/<snap>-<unit>.log`.
 
 **Post-Filter (bei rsync/hybrid):** `rtb_check_only_delta.py --analyze` trennt Pipeline-Pfade von echten Nutzerdaten.
 
