@@ -121,36 +121,36 @@ rtb_staged_should_tree_split() {
   return 1
 }
 
-rtb_staged_expand_tree_units() {
-  local tree_root="$1"
-  local rel_prefix="$2"
+rtb_staged_emit_units() {
+  local abs_root="$1"
+  local rel_path="$2"
   local -n _units_ref=$3
-  local total child name child_total grand
-  total=$(rtb_staged_entry_count "$tree_root")
+  local total child name child_count=0
+
+  total=$(rtb_staged_entry_count "$abs_root")
   if [[ "$total" -le "$RTB_STAGED_SPLIT_THRESHOLD" ]]; then
-    _units_ref+=("$rel_prefix")
+    _units_ref+=("$rel_path")
     return
   fi
-  local child_count=0
-  for child in "$tree_root"/*/; do
+
+  for child in "$abs_root"/*/; do
     [[ -d "$child" ]] || continue
     child_count=$((child_count + 1))
     name=$(basename "$child")
-    child_total=$(rtb_staged_entry_count "$child")
-    if [[ "$child_total" -gt "$RTB_STAGED_SPLIT_THRESHOLD" ]]; then
-      fn_log_info "Split $rel_prefix/$name ($child_total Einträge) — Unterordner"
-      for grand in "$child"/*/; do
-        [[ -d "$grand" ]] || continue
-        _units_ref+=("$rel_prefix/$name/$(basename "$grand")")
-      done
-    else
-      _units_ref+=("$rel_prefix/$name")
-    fi
+    rtb_staged_emit_units "$child" "$rel_path/$name" _units_ref
   done
+
   if [[ "$child_count" -eq 0 ]]; then
-    fn_log_warn "Split nötig aber keine Unterordner unter $rel_prefix — ein Lauf"
-    _units_ref+=("$rel_prefix")
+    fn_log_warn "$rel_path: $total Einträge ohne Unterordner — ein Lauf (OOM-Risiko)"
+    _units_ref+=("$rel_path")
+    return
   fi
+
+  fn_log_info "Split $rel_path ($total Einträge) → $child_count direkte Unterordner"
+}
+
+rtb_staged_expand_tree_units() {
+  rtb_staged_emit_units "$1" "$2" "$3"
 }
 
 rtb_staged_list_units() {
