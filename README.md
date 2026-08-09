@@ -214,8 +214,9 @@ bash rtb_pool_wrapper.sh --check-only
 # → exit 0 + "no_changes"        = Source gleich letztem Snapshot
 # → exit 1 + "changes_detected"  = Backup nötig
 # → exit 0 + "no_baseline"       = Noch kein Snapshot (erster Lauf)
-# → exit 2 + "error"             = rsync-Check fehlerhaft
+# → exit 2 + "error"             = Scan fehlgeschlagen
 # → exit 3 + "check_busy"        = anderer Check läuft (kein frischer Cache)
+# Erfolg: Zeile [RTB Signature] scanned … files in …s (low-RAM)
 # Parallele Läufe: flock auf /run/rtb_check_only.lock; Cache /run/rtb_check_only_cache.*
 
 # Systemd (backup-pipeline.service → rtb_pool_wrapper.sh)
@@ -251,16 +252,18 @@ __pycache__/    # Python-Bytecode
 *.py[cod]
 ```
 
-**Schicht 2: `rtb_check_excludes.sh`** (nur rsync `-ni` Delta-Check — **zusätzlich** zu excludes.txt):
+**Schicht 2: `rtb_check_excludes.sh`** (nur Backup-**Trigger** — **zusätzlich** zu excludes.txt):
 ```text
 /pcloud-archive/   pcloud-archive/
 /pcloud-temp/      pcloud-temp/
 ```
 → Änderungen dort **triggern kein Backup**, werden aber **mitgesichert** wenn z.B. Paperless ein Backup auslöst.
 
-**Post-Filter (Juni 2026):** Falls rsync trotz Exclude noch Pipeline-Pfade im Delta listet, wertet
-`rtb_check_only_delta.py --analyze` die Ausgabe nach — nur **echte** Nutzerdaten-Pfade zählen als
-Trigger. Reiner `pcloud-temp`/`pcloud-archive`-Diff → `no_changes` (kein Snapshot).
+**Trigger-Methode (August 2026):** Default `RTB_TRIGGER_MODE=signature` — vergleicht pro Top-Level-Ordner
+Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest` (**kein** `rsync -ni` Vollbaum).
+Auf mergerfs/Pi verhindert das OOM (7+ GB RAM). Fallback: `RTB_TRIGGER_MODE=rsync` oder `hybrid`.
+
+**Post-Filter (bei rsync/hybrid):** `rtb_check_only_delta.py --analyze` trennt Pipeline-Pfade von echten Nutzerdaten.
 
 | Dashboard (monitoring-dashboard) | JSON-Quelle (`--check-only`) | Bedeutung |
 |----------------------------------|------------------------------|-----------|
@@ -285,11 +288,12 @@ RTB_RESTORE_EXCLUDE_PATTERN=/restore/ # Pattern wird in effektive Exclude-Liste 
 
 Die effektive Exclude-Datei wird an rsync unterschiedlich übergeben:
 
-| Aufruf | Exclude-Datei | Pipeline-Pfade (`/pcloud-archive/`, `/pcloud-temp/`) |
-|--------|---------------|--------------------------------------------------------|
-| `--check-only` Dry-Run | `EFFECTIVE_RTB_CHECK_EXCL` | **ja** (via `rtb_check_excludes.sh`) |
-| Pre-Backup Change-Detection | `EFFECTIVE_RTB_CHECK_EXCL` | **ja** |
-| Tatsächlicher `rsync_tmbackup.sh` | `EFFECTIVE_RTB_EXCL` (`excludes.txt`) | **nein** — mitgesichert wenn Backup läuft |
+| Aufruf | Methode | Pipeline-Pfade (`/pcloud-archive/`, `/pcloud-temp/`) |
+|--------|---------|--------------------------------------------------------|
+| `--check-only` | Signature (Default) | **ja** — eigene Buckets, triggern nicht |
+| Pre-Backup Change-Detection | Signature + flock/cache | **ja** |
+| `RTB_TRIGGER_MODE=rsync` | Legacy `rsync -ni` (OOM-Risiko) | **ja** (via `EFFECTIVE_RTB_CHECK_EXCL`) |
+| Tatsächlicher `rsync_tmbackup.sh` | echtes rsync | **nein** — mitgesichert wenn Backup läuft |
 
 `rtb_check_excludes.sh` baut die Check-Liste aus `excludes.txt` + Pipeline-Patterns. Kein separater Export nach `Backup/raspi5nas/pcloud-*` nötig (`raspi5nas_backup.sh` sichert nur `/opt/apps` + systemd).
 
@@ -314,7 +318,7 @@ RTB_RESTORE_EXCLUDE_PATTERN=/mein-pfad/ bash rtb_wrapper.sh  # Anderes Verzeichn
 
 **Vorteile:**
 - **Flock:** Nur ein `--check-only`-Lauf gleichzeitig (`/run/rtb_check_only.lock`)
-- **Cache:** Bei Überlappung wird ein frischer Cache (TTL 15 min) ausgeliefert statt erneut rsync
+- **Cache:** Bei Überlappung wird ein frischer Cache (TTL 15 min) ausgeliefert statt erneut zu scannen
 - **Kein Backup-Log:** Verschmutzt nicht die tatsächlichen Backup-Logs
 - **Descriptive Output:** Lesbare Nachrichten statt kryptischer Status-Codes
 
