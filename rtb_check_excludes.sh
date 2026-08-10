@@ -117,7 +117,7 @@ print(json.dumps({
 PY
 }
 
-# Analysiert rsync -ni: echte Trigger-Deltas vs. nur pcloud-archive/temp
+# Analysiert rsync -ni: echte Trigger-Deltas vs. Pipeline / replizierte Stores
 # Exit 0 = echte Änderungen, 1 = keine (evtl. nur Pipeline), 2 = rsync hatte keine Zeilen
 rtb_analyze_trigger_output() {
   local check_out="$1" script_dir="$2" last="$3"
