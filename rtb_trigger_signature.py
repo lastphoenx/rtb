@@ -90,6 +90,111 @@ def path_excluded(rel: str, patterns: Iterable[str]) -> bool:
     return any(matches_exclude(rel, pat) for pat in patterns)
 
 
+@dataclass(frozen=True)
+class FileSig:
+    size: int
+    mtime_ns: int
+
+
+def walk_file_index(root: str, excludes: list[str]) -> dict[str, FileSig]:
+    """Map relative path -> (size, mtime_ns) for files under root."""
+    index: dict[str, FileSig] = {}
+    if not os.path.isdir(root):
+        return index
+
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        rel_dir = os.path.relpath(dirpath, root)
+        if rel_dir == ".":
+            rel_dir = ""
+
+        pruned: list[str] = []
+        for name in dirnames:
+            rel = f"{rel_dir}/{name}" if rel_dir else name
+            if path_excluded(rel, excludes) or path_excluded(rel + "/", excludes):
+                continue
+            pruned.append(name)
+        dirnames[:] = pruned
+
+        for name in filenames:
+            rel = f"{rel_dir}/{name}" if rel_dir else name
+            if path_excluded(rel, excludes):
+                continue
+            full = os.path.join(dirpath, name)
+            try:
+                st = os.lstat(full)
+            except OSError:
+                continue
+            if not os.path.isfile(full) and not os.path.islink(full):
+                continue
+            mtime_ns = int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9)))
+            index[rel] = FileSig(size=int(st.st_size), mtime_ns=mtime_ns)
+
+    return index
+
+
+def diff_file_indexes(
+    src_index: dict[str, FileSig],
+    snap_index: dict[str, FileSig],
+    *,
+    bucket: str,
+    sample_n: int,
+) -> dict:
+    prefix = "" if bucket == "." else f"{bucket}/"
+    src_keys = {p for p in src_index if bucket == "." or p == bucket or p.startswith(prefix)}
+    snap_keys = {p for p in snap_index if bucket == "." or p == bucket or p.startswith(prefix)}
+
+    added = sorted(src_keys - snap_keys)
+    removed = sorted(snap_keys - src_keys)
+    changed: list[str] = []
+    for path in sorted(src_keys & snap_keys):
+        if src_index[path] != snap_index[path]:
+            changed.append(path)
+
+    samples: list[dict] = []
+
+    def _push(path: str, reason: str) -> None:
+        if len(samples) >= sample_n:
+            return
+        entry: dict = {"path": path, "reason": reason}
+        if reason == "added" and path in src_index:
+            entry["src_size"] = src_index[path].size
+        elif reason == "removed" and path in snap_index:
+            entry["snap_size"] = snap_index[path].size
+        elif reason == "changed" and path in src_index and path in snap_index:
+            s, n = src_index[path], snap_index[path]
+            entry["src_size"] = s.size
+            entry["snap_size"] = n.size
+            entry["src_mtime_ns"] = s.mtime_ns
+            entry["snap_mtime_ns"] = n.mtime_ns
+        samples.append(entry)
+
+    for path in added:
+        _push(path, "added")
+    for path in removed:
+        _push(path, "removed")
+    for path in changed:
+        _push(path, "changed")
+
+    return {
+        "bucket": bucket,
+        "src_files": len(src_keys),
+        "snap_files": len(snap_keys),
+        "added": len(added),
+        "removed": len(removed),
+        "changed": len(changed),
+        "diff_total": len(added) + len(removed) + len(changed),
+        "samples": samples,
+    }
+
+
+def bucket_stats_row(name: str, src: BucketStats, snap: BucketStats) -> dict:
+    return {
+        "bucket": name,
+        "src": {"files": src.files, "bytes": src.bytes, "max_mtime_ns": src.max_mtime_ns},
+        "snap": {"files": snap.files, "bytes": snap.bytes, "max_mtime_ns": snap.max_mtime_ns},
+    }
+
+
 def top_bucket(rel: str) -> str:
     rel = rel.lstrip("./")
     if not rel or rel == ".":
@@ -183,13 +288,33 @@ def build_result(
     files_snap: int,
     duration_sec: float,
     top_n: int,
+    bucket_details: list[dict] | None = None,
 ) -> dict:
+    trigger_real = preview_buckets(dirty_real, baseline, kind="trigger", top_n=top_n)
+    trigger_real["method"] = "signature"
+    if bucket_details:
+        trigger_real["bucket_details"] = bucket_details
+        file_lines: list[str] = []
+        file_count = 0
+        for row in bucket_details:
+            file_count += int(row.get("diff_total", 0))
+            for sample in row.get("samples", []):
+                if len(file_lines) >= 30:
+                    break
+                path = sample.get("path", "")
+                reason = sample.get("reason", "?")
+                file_lines.append(f"{reason}: {path}")
+        if file_count > 0:
+            trigger_real["count"] = file_count
+        if file_lines:
+            trigger_real["samples"] = file_lines
+
     return {
         "method": "signature",
         "has_real_trigger": len(dirty_real) > 0,
         "dirty_real_buckets": dirty_real,
         "dirty_pipeline_buckets": dirty_pipeline,
-        "trigger_real": preview_buckets(dirty_real, baseline, kind="trigger", top_n=top_n),
+        "trigger_real": trigger_real,
         "trigger_pipeline_only": preview_buckets(
             dirty_pipeline, baseline, kind="pipeline_only", top_n=top_n
         ),
@@ -215,6 +340,12 @@ def main() -> int:
     )
     parser.add_argument("--top-n", type=int, default=10)
     parser.add_argument(
+        "--file-samples",
+        type=int,
+        default=25,
+        help="Max file-level diff samples per dirty bucket (default: 25)",
+    )
+    parser.add_argument(
         "--kind",
         choices=("trigger", "backup_scope"),
         default="trigger",
@@ -229,6 +360,19 @@ def main() -> int:
     src_stats, files_src = walk_bucket_stats(args.src, excludes)
     snap_stats, files_snap = walk_bucket_stats(args.snapshot, excludes)
     dirty_real, dirty_pipeline = diff_buckets(src_stats, snap_stats, trigger_only)
+
+    src_index = walk_file_index(args.src, excludes)
+    snap_index = walk_file_index(args.snapshot, excludes)
+    bucket_details: list[dict] = []
+    sample_n = max(1, args.file_samples)
+    for name in dirty_real:
+        detail = diff_file_indexes(src_index, snap_index, bucket=name, sample_n=sample_n)
+        detail["stats"] = bucket_stats_row(
+            name,
+            src_stats.get(name, BucketStats()),
+            snap_stats.get(name, BucketStats()),
+        )
+        bucket_details.append(detail)
 
     if args.kind == "backup_scope":
         all_dirty = sorted(set(dirty_real) | set(dirty_pipeline))
@@ -256,6 +400,7 @@ def main() -> int:
         files_snap=files_snap,
         duration_sec=time.monotonic() - t0,
         top_n=max(1, args.top_n),
+        bucket_details=bucket_details if dirty_real else None,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0

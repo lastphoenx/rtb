@@ -270,9 +270,10 @@ __pycache__/  *.py[cod]  **/._*
 | Anpassungen nur in **Wrappern** (`rtb_pool_wrapper.sh`, `rtb_staged_backup.sh`, `rtb_check_excludes.sh`) | Flags, Logging, Trigger, Staging, Excludes — getrennt vom Upstream |
 | Produktions-rsync **ohne** `--itemize-changes` | Upstream druckt jede Datei auf stdout → bei 100k+ Dateien GB Log/RAM; Wrapper setzt `--rsync-set-flags` |
 | **Kein** `RTB_OOM_SCORE_ADJ` / `OOMScoreAdjust=500` | Hat rsync bei OOM gezielt getötet statt Backup durchlaufen zu lassen |
-| Trigger: `RTB_TRIGGER_MODE=signature` (Default) | Kein `rsync -ni` über ganzen `/srv/nas`-Baum (OOM beim Check) |
+| Trigger: `RTB_TRIGGER_MODE=hybrid` (Default) | Signature-Vorfilter + rsync `-ni` nur auf dirty Buckets (Backup → Subunits wie Staged-RTB); kein Vollbaum-OOM |
+| Fallback `signature` / `rsync` | Nur Bucket-Stats bzw. Legacy-Vollbaum (OOM-Risiko) |
 
-**Trigger-Methode:** `rtb_trigger_signature.py` vergleicht pro Top-Level-Ordner Dateianzahl, Bytes und max. mtime zwischen `/srv/nas` und `rtb_nas/latest`. Fallback nur für Debug: `RTB_TRIGGER_MODE=rsync` oder `hybrid` (OOM-Risiko).
+**Trigger-Methode:** Default `hybrid`: Bucket-Signaturen finden Kandidaten, dann rsync `-ni` nur auf betroffene Buckets (bei `Backup` in Subunits wie Staged-RTB). Liefert Dateipfade fürs Dashboard. Reine Signature (`signature`) oder Vollbaum (`rsync`) nur bei Bedarf.
 
 **Backup-rsync (Default `RTB_STAGED=1`):** `rtb_staged_backup.sh` führt **mehrere rsync-Läufe** in **einen** Snapshot aus (Hardlinks/`--link-dest` pro Teilpfad). Grund: ~240k Baumeinträge → monolithischer rsync ~5,5 GB RSS auf 8 GB-Pi (OOM).
 
