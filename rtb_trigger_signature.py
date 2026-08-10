@@ -21,9 +21,12 @@ from rtb_check_only_delta import is_trigger_only_path  # noqa: E402
 
 # Staged-RTB resume markers: only in snapshot root (rtb_staged_backup.sh), never on live /srv/nas.
 # Ignored in signature walks — same idea as pcloud-archive (pipeline artefact), but snapshot-only.
+# Note: path_excluded()/top_bucket() use lstrip("./"), so ".rtb_staged_done" becomes bucket "rtb_staged_done".
 RTB_SIGNATURE_IGNORE_PATTERNS: tuple[str, ...] = (
     ".rtb_staged_done",
     ".rtb_staged_active",
+    "rtb_staged_done",
+    "rtb_staged_active",
 )
 
 
