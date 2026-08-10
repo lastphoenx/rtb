@@ -17,7 +17,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
-from rtb_check_only_delta import is_trigger_only_path  # noqa: E402
+from rtb_check_only_delta import RTB_TRIGGER_ONLY_DEFAULTS, is_trigger_only_path  # noqa: E402
 
 # Staged-RTB resume markers: only in snapshot root (rtb_staged_backup.sh), never on live /srv/nas.
 # Ignored in signature walks — same idea as pcloud-archive (pipeline artefact), but snapshot-only.
@@ -196,10 +196,18 @@ def bucket_stats_row(name: str, src: BucketStats, snap: BucketStats) -> dict:
 
 
 def top_bucket(rel: str) -> str:
+    """Top-level bucket key for signature stats.
+
+    Under ``Backup/`` use second path segment (``Backup/Paperless``, ``Backup/pbs2``)
+    so replicated backup stores can be trigger-only without poisoning the whole tree.
+    """
     rel = rel.lstrip("./")
     if not rel or rel == ".":
         return "."
-    return rel.split("/")[0]
+    parts = rel.split("/")
+    if parts[0] == "Backup" and len(parts) >= 2:
+        return f"Backup/{parts[1]}"
+    return parts[0]
 
 
 def walk_bucket_stats(root: str, excludes: list[str]) -> tuple[DefaultDict[str, BucketStats], int]:
@@ -353,7 +361,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    trigger_only = args.trigger_only or ["/pcloud-archive/", "/pcloud-temp/"]
+    trigger_only = args.trigger_only or list(RTB_TRIGGER_ONLY_DEFAULTS)
     excludes = list(RTB_SIGNATURE_IGNORE_PATTERNS) + load_patterns(args.exclude_file or None)
     t0 = time.monotonic()
 

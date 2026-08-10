@@ -4,6 +4,7 @@
 #   excludes.txt          → echtes rsync_tmbackup: Pattern = NIE ins Snapshot
 #   rtb_check_excludes.sh → ZUSÄTZLICH nur für rsync -ni (Backup-Trigger):
 #                           /pcloud-archive/, /pcloud-temp/
+#                           /Backup/pbs2/, /Backup/pve2/ (replizierte Stores)
 #                           Änderungen dort triggern kein Backup, werden aber
 #                           mitgesichert wenn ein anderes Delta das Backup startet.
 
@@ -13,15 +14,53 @@ RTB_TRIGGER_ONLY_PATTERNS=(
   '/pcloud-temp/'
   'pcloud-archive/'
   'pcloud-temp/'
+  '/Backup/pbs2/'
+  '/Backup/pve2/'
+  'Backup/pbs2/'
+  'Backup/pve2/'
 )
 
-# rsync --exclude-from braucht beide Formen (anchored + unanchored)
+# rsync --exclude-from braucht beide Formen (anchored + unanchored) — nur Pipeline-Pfade
 RTB_TRIGGER_ONLY_EXCLUDE_FILE_PATTERNS=(
   '/pcloud-archive/'
   '/pcloud-temp/'
   'pcloud-archive/'
   'pcloud-temp/'
 )
+
+# Deduped --trigger-only args for python3 (canonical /prefix/ form).
+RTB_TRIGGER_ONLY_CLI=()
+rtb_trigger_only_build_cli_args() {
+  RTB_TRIGGER_ONLY_CLI=()
+  local seen="" pat norm
+  for pat in "${RTB_TRIGGER_ONLY_PATTERNS[@]}"; do
+    norm="${pat#/}"
+    norm="${norm%/}"
+    norm="/${norm}/"
+    if [[ "$seen" == *"|${norm}|"* ]]; then
+      continue
+    fi
+    seen="${seen}|${norm}|"
+    RTB_TRIGGER_ONLY_CLI+=(--trigger-only "$norm")
+  done
+}
+
+# True if relative path is under a trigger-only prefix (hybrid rsync skip).
+rtb_path_is_trigger_only() {
+  local path="$1"
+  local pat norm
+  path="${path#./}"
+  for pat in "${RTB_TRIGGER_ONLY_PATTERNS[@]}"; do
+    norm="${pat#/}"
+    norm="${norm%/}"
+    if [[ "$path" == "$norm" || "$path" == "$norm"/* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+rtb_trigger_only_build_cli_args
 
 rtb_build_check_excludes() {
   local base="${1:?}"
@@ -50,10 +89,15 @@ rtb_emit_exclude_policy_json() {
   if ! command -v python3 &>/dev/null; then
     return 0
   fi
-  python3 - "$excludes_file" "${RTB_TRIGGER_ONLY_PATTERNS[@]}" <<'PY'
+  python3 - "$excludes_file" <<'PY'
 import json, sys
 excl = sys.argv[1]
-trigger = list(sys.argv[2:])
+canonical = [
+    "/pcloud-archive/",
+    "/pcloud-temp/",
+    "/Backup/pbs2/",
+    "/Backup/pve2/",
+]
 never = []
 if excl:
     try:
@@ -66,7 +110,7 @@ if excl:
     except OSError:
         pass
 print(json.dumps({
-    "trigger_only": ["/pcloud-archive/", "/pcloud-temp/"],
+    "trigger_only": canonical,
     "signature_ignore": [".rtb_staged_done", ".rtb_staged_active", "rtb_staged_done", "rtb_staged_active"],
     "never_backup": never,
 }, ensure_ascii=False))
@@ -86,7 +130,7 @@ rtb_analyze_trigger_output() {
   local analysis
   analysis=$(echo "$check_out" | python3 "${script_dir}/rtb_check_only_delta.py" \
     --analyze --top-n 10 \
-    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${RTB_TRIGGER_ONLY_CLI[@]}" \
     "${last}" 2>/dev/null) || return 0
   if echo "$analysis" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('has_real_trigger') else 1)" 2>/dev/null; then
     return 0
@@ -98,7 +142,7 @@ rtb_emit_trigger_analysis_json() {
   local check_out="$1" script_dir="$2" last="$3"
   echo "$check_out" | python3 "${script_dir}/rtb_check_only_delta.py" \
     --analyze --top-n 10 \
-    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${RTB_TRIGGER_ONLY_CLI[@]}" \
     "${last}" 2>/dev/null || true
 }
 
@@ -106,7 +150,7 @@ rtb_emit_trigger_analysis_from_file() {
   local delta_file="$1" script_dir="$2" last="$3"
   rtb_delta_itemize_lines "$delta_file" | python3 "${script_dir}/rtb_check_only_delta.py" \
     --analyze --top-n 10 \
-    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${RTB_TRIGGER_ONLY_CLI[@]}" \
     "${last}" 2>/dev/null || true
 }
 
@@ -132,9 +176,17 @@ rtb_scope_json_has_user_delta() {
   [[ -n "$scope_json" ]] || return 1
   echo "$scope_json" | python3 -c "
 import json, sys
-skip = {'pcloud-archive', 'pcloud-temp', '.'}
+skip_top = {'pcloud-archive', 'pcloud-temp', '.'}
+skip_prefixes = ('Backup/pbs2', 'Backup/pve2')
 d = json.load(sys.stdin)
-n = sum(r['count'] for r in d.get('top_dirs', []) if r.get('dir') not in skip)
+n = 0
+for r in d.get('top_dirs', []):
+    dir_name = r.get('dir', '')
+    if dir_name in skip_top:
+        continue
+    if any(dir_name == p or dir_name.startswith(p + '/') for p in skip_prefixes):
+        continue
+    n += r['count']
 sys.exit(0 if n > 0 else 1)
 " 2>/dev/null
 }
@@ -194,7 +246,7 @@ rtb_trigger_delta_signature() {
   json=$(python3 "${script_dir}/rtb_trigger_signature.py" \
     --src "$src" --snapshot "$last" \
     --exclude-file "$check_excl" \
-    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${RTB_TRIGGER_ONLY_CLI[@]}" \
     --top-n 10 --file-samples 25 2>&1)
   py_rc=$?
   set +e
@@ -296,7 +348,7 @@ rtb_trigger_delta_hybrid() {
   json=$(python3 "${script_dir}/rtb_trigger_signature.py" \
     --src "$src" --snapshot "$last" \
     --exclude-file "$check_excl" \
-    --trigger-only /pcloud-archive/ --trigger-only /pcloud-temp/ \
+    "${RTB_TRIGGER_ONLY_CLI[@]}" \
     --top-n 10 --file-samples 25 2>/dev/null) || return 2
 
   if ! echo "$json" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('has_real_trigger') else 1)" 2>/dev/null; then
@@ -334,6 +386,10 @@ for row in tr.get('bucket_details',[]) or []:
       sub_src="${src%/}/${unit}"
       sub_last="${last%/}/${unit}"
       [[ -d "$sub_src" || -d "$sub_last" ]] || continue
+      if rtb_path_is_trigger_only "$unit"; then
+        [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] hybrid → skip rsync confirm (trigger-only): ${unit}"
+        continue
+      fi
       [[ "$quiet" != "1" ]] && echo "[RTB Wrapper] hybrid → rsync -ni ${unit}"
       rtb_run_delta_rsync_ni "$sub_src" "$sub_last" "$check_excl"
       delta_file="$RTB_DELTA_FILE"

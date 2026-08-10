@@ -253,8 +253,12 @@ __pycache__/  *.py[cod]  **/._*
 ```text
 /pcloud-archive/   pcloud-archive/
 /pcloud-temp/      pcloud-temp/
+/Backup/pbs2/      Backup/pbs2/     (PBS-Replik, täglich 03:00)
+/Backup/pve2/      Backup/pve2/     (vzdump-Replik)
 ```
 → Änderungen dort **triggern kein Backup** allein, werden aber **mitgesichert**, wenn z. B. Paperless ein Backup auslöst.
+
+**Signature Sub-Buckets:** Unter `Backup/` werden Buckets als `Backup/<name>` gezählt (nicht ein aggregierter `Backup`-Bucket), damit PBS/pve2-Noise Config-Backups (`Backup/Paperless`, …) nicht maskiert.
 
 **Schicht C: Signature-Trigger** (`rtb_trigger_signature.py` — nur `RTB_TRIGGER_MODE=signature`/`hybrid`):
 ```text
@@ -307,7 +311,7 @@ sudo /opt/apps/rtb/rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/$(basen
 | Dashboard (monitoring-dashboard) | JSON-Quelle (`--check-only`) | Bedeutung |
 |----------------------------------|------------------------------|-----------|
 | **Backup-Trigger** | `[RTB Delta JSON]` | Echte Änderungen → nächster Lauf startet RTB |
-| **Pipeline (triggert nicht)** | `[RTB PipelineOnly JSON]` | Nur pcloud-archive/temp geändert |
+| **Pipeline (triggert nicht)** | `[RTB PipelineOnly JSON]` | Nur pcloud-archive/temp oder replizierte Stores (`Backup/pbs2`, `Backup/pve2`) geändert |
 | **Mitgesichert bei Backup** | `[RTB BackupScope JSON]` | Was ins RTB käme, wenn Backup jetzt lief |
 | **Exclude-Policy** | `[RTB ExcludePolicy JSON]` | Matrix Trigger ja/nein × Snapshot mit/nie |
 
@@ -327,11 +331,11 @@ RTB_RESTORE_EXCLUDE_PATTERN=/restore/ # Pattern wird in effektive Exclude-Liste 
 
 Die effektive Exclude-Datei wird an rsync unterschiedlich übergeben:
 
-| Aufruf | Methode | Pipeline-Pfade (`/pcloud-archive/`, `/pcloud-temp/`) |
-|--------|---------|--------------------------------------------------------|
+| Aufruf | Methode | Pipeline / replizierte Stores |
+|--------|---------|-------------------------------|
 | `--check-only` | Signature (Default) | **ja** — eigene Buckets, triggern nicht |
 | Pre-Backup Change-Detection | Signature + flock/cache | **ja** |
-| `RTB_TRIGGER_MODE=rsync` | Legacy `rsync -ni` (OOM-Risiko) | **ja** (via `EFFECTIVE_RTB_CHECK_EXCL`) |
+| `RTB_TRIGGER_MODE=rsync` | Legacy `rsync -ni` (OOM-Risiko) | **ja** (Post-Filter via `rtb_check_only_delta.py`) |
 | Tatsächlicher `rsync_tmbackup.sh` | echtes rsync | **nein** — mitgesichert wenn Backup läuft |
 
 `rtb_check_excludes.sh` baut die Check-Liste aus `excludes.txt` + Pipeline-Patterns. Kein separater Export nach `Backup/raspi5nas/pcloud-*` nötig (`raspi5nas_backup.sh` sichert nur `/opt/apps` + systemd).

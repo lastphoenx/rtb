@@ -11,6 +11,15 @@ from collections import Counter
 
 _ITEMIZE_RE = re.compile(r"^[<>ch*.]")
 
+# Canonical trigger-only prefixes (replicated stores + pipeline paths).
+# Bash: rtb_check_excludes.sh RTB_TRIGGER_ONLY_PATTERNS (both anchored/unanchored forms).
+RTB_TRIGGER_ONLY_DEFAULTS: tuple[str, ...] = (
+    "/pcloud-archive/",
+    "/pcloud-temp/",
+    "/Backup/pbs2/",
+    "/Backup/pve2/",
+)
+
 
 def _path_from_line(line: str) -> str | None:
     line = line.rstrip("\n")
@@ -141,7 +150,7 @@ def main() -> int:
     top_n = max(1, args.top_n)
 
     if args.analyze:
-        prefixes = args.trigger_only or ["/pcloud-archive/", "/pcloud-temp/"]
+        prefixes = args.trigger_only or list(RTB_TRIGGER_ONLY_DEFAULTS)
         result = analyze_trigger_delta(rsync_output, args.baseline, prefixes, top_n=top_n)
         print(json.dumps(result, ensure_ascii=False))
         return 0

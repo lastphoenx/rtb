@@ -7,9 +7,8 @@
 #    Pattern hier = wird NIE ins RTB-Snapshot kopiert.
 #
 # B) rtb_check_excludes.sh — NUR Delta-Check (rsync -ni, „triggert Backup?“)
-#    Zusätzlich zu dieser Datei: /pcloud-archive/, /pcloud-temp/
-#    → Änderungen dort starten KEIN Backup allein,
-#      landen aber im Snapshot wenn z.B. Paperless ein Backup auslöst.
+#    Zusätzlich: /pcloud-archive/, /pcloud-temp/, /Backup/pbs2/, /Backup/pve2/
+#    → triggern kein Backup allein, landen aber im Snapshot wenn z.B. Paperless triggert.
 #
 # Siehe rtb/README.md § Excludes & Backup Loop Prevention
 
@@ -40,3 +39,7 @@ venv/
 
 # macOS AppleDouble-Metadaten (nicht sichern — reduziert Pool/pCloud-Noise)
 **/._*
+
+# PBS2 runtime state on NAS (ephemeral; GC/lock changes every cycle)
+/Backup/pbs2/.lock
+/Backup/pbs2/.gc-status
