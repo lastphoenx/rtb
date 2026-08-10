@@ -19,6 +19,13 @@ if _SCRIPT_DIR not in sys.path:
 
 from rtb_check_only_delta import is_trigger_only_path  # noqa: E402
 
+# Staged-RTB resume markers: only in snapshot root (rtb_staged_backup.sh), never on live /srv/nas.
+# Ignored in signature walks — same idea as pcloud-archive (pipeline artefact), but snapshot-only.
+RTB_SIGNATURE_IGNORE_PATTERNS: tuple[str, ...] = (
+    ".rtb_staged_done",
+    ".rtb_staged_active",
+)
+
 
 @dataclass(frozen=True)
 class BucketStats:
@@ -213,7 +220,7 @@ def main() -> int:
     args = parser.parse_args()
 
     trigger_only = args.trigger_only or ["/pcloud-archive/", "/pcloud-temp/"]
-    excludes = load_patterns(args.exclude_file or None)
+    excludes = list(RTB_SIGNATURE_IGNORE_PATTERNS) + load_patterns(args.exclude_file or None)
     t0 = time.monotonic()
 
     src_stats, files_src = walk_bucket_stats(args.src, excludes)

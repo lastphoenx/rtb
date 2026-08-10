@@ -256,6 +256,12 @@ __pycache__/  *.py[cod]  **/._*
 ```
 → Änderungen dort **triggern kein Backup** allein, werden aber **mitgesichert**, wenn z. B. Paperless ein Backup auslöst.
 
+**Schicht C: Signature-Trigger** (`rtb_trigger_signature.py` — nur `RTB_TRIGGER_MODE=signature`/`hybrid`):
+```text
+.rtb_staged_done   .rtb_staged_active
+```
+→ Resume-Marker im **Snapshot-Root** (`rtb_staged_backup.sh`); existieren nicht auf `/srv/nas`. Ohne Ignore würde jeder erfolgreiche Staged-Lauf fälschlich `changes_detected` melden.
+
 **Architektur-Regeln (August 2026, verbindlich):**
 
 | Regel | Begründung |

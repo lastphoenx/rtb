@@ -67,6 +67,7 @@ if excl:
         pass
 print(json.dumps({
     "trigger_only": ["/pcloud-archive/", "/pcloud-temp/"],
+    "signature_ignore": [".rtb_staged_done", ".rtb_staged_active"],
     "never_backup": never,
 }, ensure_ascii=False))
 PY
