@@ -318,7 +318,7 @@ else
     sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
   fi
   RTB_EXIT=$?
-  grep -E '^(rsync_tmbackup|rtb_staged_backup):' "$rtb_backup_out" || true
+  grep -E '^(rsync_tmbackup|rtb_staged_backup):|^\[RTB BackupSummary JSON\]' "$rtb_backup_out" || true
   if [[ $RTB_EXIT -ne 0 ]]; then
     log "[error] rsync_tmbackup Ausgabe (Auszug):"
     tail -40 "$rtb_backup_out" || true

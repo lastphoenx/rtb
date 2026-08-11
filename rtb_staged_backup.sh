@@ -6,6 +6,8 @@
 # Hardlinks + --link-dest pro Teilpfad wie bei Time Machine.
 set -euo pipefail
 
+RTB_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 APPNAME="rtb_staged_backup"
 
 fn_log_info()  { echo "$APPNAME: $1"; }
@@ -371,10 +373,14 @@ fn_log_info "From: $SRC_FOLDER/"
 fn_log_info "To:   $DEST/"
 
 unit_idx=0
+SUMMARY_JSON_LINES=()
 for unit in "${UNITS[@]}"; do
   unit_idx=$((unit_idx + 1))
   if rtb_unit_done "$unit"; then
     fn_log_info "[$unit_idx/${#UNITS[@]}] skip (fertig): $unit"
+    if command -v python3 &>/dev/null; then
+      SUMMARY_JSON_LINES+=("$(python3 "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --unit "$unit" --status skipped)")
+    fi
     continue
   fi
 
@@ -407,6 +413,7 @@ for unit in "${UNITS[@]}"; do
 
   fn_log_info "[$unit_idx/${#UNITS[@]}] rsync $unit"
   unit_log="$LOG_DIR/$(basename "$DEST")-${unit//\//_}.log"
+  rsync_capture="$(mktemp /tmp/rtb_staged_rsync_cap.XXXXXX)"
 
   # shellcheck disable=SC2086
   set +e
@@ -414,10 +421,12 @@ for unit in "${UNITS[@]}"; do
     --log-file "$unit_log" \
     "${exclude_opt[@]}" \
     "${link_dest_opt[@]}" \
-    -- "$src_path" "$dest_path" >>"$LOG_FILE" 2>&1
+    -- "$src_path" "$dest_path" >"$rsync_capture" 2>&1
   rsync_rc=$?
   set -e
+  cat "$rsync_capture" >>"$LOG_FILE"
   if [[ "$rsync_rc" -ne 0 ]]; then
+    rm -f "$rsync_capture"
     fn_log_error "rsync exit $rsync_rc für $unit — siehe $unit_log"
     fn_log_error "Kurz: grep -E 'rsync:|rsync error:' '$unit_log' | tail -20"
     fn_log_error "Resume: rtb_staged_backup.sh erneut (oder rtb_pool_wrapper.sh --force)"
@@ -431,6 +440,10 @@ for unit in "${UNITS[@]}"; do
 
   rtb_mark_unit_done "$unit"
   fn_log_info "[$unit_idx/${#UNITS[@]}] ok: $unit"
+  if command -v python3 &>/dev/null; then
+    SUMMARY_JSON_LINES+=("$(python3 "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --unit "$unit" --status ok --parse-stats-file "$rsync_capture")")
+  fi
+  rm -f "$rsync_capture"
 done
 
 # --- Finalize (wie rsync_tmbackup bei Erfolg) ---
@@ -440,4 +453,8 @@ rm -f "$INPROGRESS_FILE" "$ACTIVE_FILE"
 
 fn_log_info "Backup completed without errors."
 fn_log_info "latest -> $(basename "$DEST")"
+
+if command -v python3 &>/dev/null && [[ ${#SUMMARY_JSON_LINES[@]} -gt 0 ]]; then
+  printf '%s\n' "${SUMMARY_JSON_LINES[@]}" | python3 "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --aggregate --snapshot "$(basename "$DEST")"
+fi
 exit 0

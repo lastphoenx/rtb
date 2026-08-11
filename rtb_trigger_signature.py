@@ -9,7 +9,7 @@ import json
 import os
 import sys
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import DefaultDict, Iterable
 
@@ -17,6 +17,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
+from rtb_buckets import bucket_dir_rows, bucket_display_path, top_bucket  # noqa: E402
 from rtb_check_only_delta import RTB_TRIGGER_ONLY_DEFAULTS, is_trigger_only_path  # noqa: E402
 
 # Staged-RTB resume markers: only in snapshot root (rtb_staged_backup.sh), never on live /srv/nas.
@@ -195,19 +196,28 @@ def bucket_stats_row(name: str, src: BucketStats, snap: BucketStats) -> dict:
     }
 
 
-def top_bucket(rel: str) -> str:
-    """Top-level bucket key for signature stats.
-
-    Under ``Backup/`` use second path segment (``Backup/Paperless``, ``Backup/pbs2``)
-    so replicated backup stores can be trigger-only without poisoning the whole tree.
-    """
-    rel = rel.lstrip("./")
-    if not rel or rel == ".":
-        return "."
-    parts = rel.split("/")
-    if parts[0] == "Backup" and len(parts) >= 2:
-        return f"Backup/{parts[1]}"
-    return parts[0]
+def preview_buckets(
+    names: list[str],
+    baseline: str,
+    *,
+    kind: str,
+    top_n: int,
+    bucket_details: list[dict] | None = None,
+) -> dict:
+    rows = bucket_dir_rows(names, top_n)
+    result: dict = {
+        "kind": kind,
+        "count": len(names),
+        "baseline": baseline,
+        "top_dirs": rows,
+        "samples": names[:30],
+    }
+    if bucket_details:
+        result["bucket_details"] = bucket_details
+        file_count = sum(int(row.get("diff_total", 0)) for row in bucket_details)
+        if file_count > 0:
+            result["count"] = file_count
+    return result
 
 
 def walk_bucket_stats(root: str, excludes: list[str]) -> tuple[DefaultDict[str, BucketStats], int]:
@@ -275,17 +285,6 @@ def diff_buckets(
     return dirty_real, dirty_pipeline
 
 
-def preview_buckets(names: list[str], baseline: str, *, kind: str, top_n: int) -> dict:
-    tops = Counter(names)
-    return {
-        "kind": kind,
-        "count": len(names),
-        "baseline": baseline,
-        "top_dirs": [{"dir": k, "count": v} for k, v in tops.most_common(top_n)],
-        "samples": names[:30],
-    }
-
-
 def build_result(
     *,
     baseline: str,
@@ -297,11 +296,13 @@ def build_result(
     duration_sec: float,
     top_n: int,
     bucket_details: list[dict] | None = None,
+    pipeline_bucket_details: list[dict] | None = None,
 ) -> dict:
-    trigger_real = preview_buckets(dirty_real, baseline, kind="trigger", top_n=top_n)
+    trigger_real = preview_buckets(
+        dirty_real, baseline, kind="trigger", top_n=top_n, bucket_details=bucket_details
+    )
     trigger_real["method"] = "signature"
     if bucket_details:
-        trigger_real["bucket_details"] = bucket_details
         file_lines: list[str] = []
         file_count = 0
         for row in bucket_details:
@@ -317,15 +318,21 @@ def build_result(
         if file_lines:
             trigger_real["samples"] = file_lines
 
+    pipeline_preview = preview_buckets(
+        dirty_pipeline,
+        baseline,
+        kind="pipeline_only",
+        top_n=top_n,
+        bucket_details=pipeline_bucket_details,
+    )
+
     return {
         "method": "signature",
         "has_real_trigger": len(dirty_real) > 0,
         "dirty_real_buckets": dirty_real,
         "dirty_pipeline_buckets": dirty_pipeline,
         "trigger_real": trigger_real,
-        "trigger_pipeline_only": preview_buckets(
-            dirty_pipeline, baseline, kind="pipeline_only", top_n=top_n
-        ),
+        "trigger_pipeline_only": pipeline_preview,
         "scan": {
             "files_src": files_src,
             "files_snap": files_snap,
@@ -372,6 +379,7 @@ def main() -> int:
     src_index = walk_file_index(args.src, excludes)
     snap_index = walk_file_index(args.snapshot, excludes)
     bucket_details: list[dict] = []
+    pipeline_bucket_details: list[dict] = []
     sample_n = max(1, args.file_samples)
     for name in dirty_real:
         detail = diff_file_indexes(src_index, snap_index, bucket=name, sample_n=sample_n)
@@ -380,7 +388,17 @@ def main() -> int:
             src_stats.get(name, BucketStats()),
             snap_stats.get(name, BucketStats()),
         )
+        detail["path"] = bucket_display_path(name)
         bucket_details.append(detail)
+    for name in dirty_pipeline:
+        detail = diff_file_indexes(src_index, snap_index, bucket=name, sample_n=sample_n)
+        detail["stats"] = bucket_stats_row(
+            name,
+            src_stats.get(name, BucketStats()),
+            snap_stats.get(name, BucketStats()),
+        )
+        detail["path"] = bucket_display_path(name)
+        pipeline_bucket_details.append(detail)
 
     if args.kind == "backup_scope":
         all_dirty = sorted(set(dirty_real) | set(dirty_pipeline))
@@ -409,6 +427,7 @@ def main() -> int:
         duration_sec=time.monotonic() - t0,
         top_n=max(1, args.top_n),
         bucket_details=bucket_details if dirty_real else None,
+        pipeline_bucket_details=pipeline_bucket_details if dirty_pipeline else None,
     )
     print(json.dumps(result, ensure_ascii=False))
     return 0

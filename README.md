@@ -313,6 +313,7 @@ sudo /opt/apps/rtb/rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/$(basen
 | **Backup-Trigger** | `[RTB Delta JSON]` | Echte Änderungen → nächster Lauf startet RTB |
 | **Pipeline (triggert nicht)** | `[RTB PipelineOnly JSON]` | Nur pcloud-archive/temp oder replizierte Stores (`Backup/pbs2`, `Backup/pve2`) geändert |
 | **Mitgesichert bei Backup** | `[RTB BackupScope JSON]` | Was ins RTB käme, wenn Backup jetzt lief |
+| **Letztes Backup (Einheiten)** | `[RTB BackupSummary JSON]` | Nach Staged-RTB: pro Pfad (`/srv/nas/Backup/pbs2`, …) Dateien/Bytes transferiert |
 | **Exclude-Policy** | `[RTB ExcludePolicy JSON]` | Matrix Trigger ja/nein × Snapshot mit/nie |
 
 Siehe `pcloud-tools/docs/DASHBOARD.md` § Backup-Trigger vs. Pipeline.

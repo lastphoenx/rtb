@@ -5,9 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
-from collections import Counter
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
+from rtb_buckets import bucket_dir_rows_from_paths, bucket_dir_rows  # noqa: E402
 
 _ITEMIZE_RE = re.compile(r"^[<>ch*.]")
 
@@ -56,12 +62,11 @@ def _paths_from_rsync(rsync_output: str) -> list[str]:
 
 
 def _preview_from_paths(paths: list[str], baseline: str, top_n: int, *, kind: str) -> dict:
-    tops = Counter(p.split("/")[0] if "/" in p else p for p in paths)
     return {
         "kind": kind,
         "count": len(paths),
         "baseline": baseline,
-        "top_dirs": [{"dir": k, "count": v} for k, v in tops.most_common(top_n)],
+        "top_dirs": bucket_dir_rows_from_paths(paths, top_n),
         "samples": paths[:30],
     }
 
@@ -110,9 +115,11 @@ def format_text(preview: dict) -> str:
     if not preview["top_dirs"]:
         lines.append("  (keine)")
     else:
-        width = max(len(row["dir"]) for row in preview["top_dirs"])
         for row in preview["top_dirs"]:
-            lines.append(f"  {row['count']:>6}  {row['dir']:<{width}}")
+            label = row.get("path") or row.get("dir", "?")
+            if row.get("canonical") and row["canonical"] != label:
+                label = f"{label} (Pipeline: {row['canonical']})"
+            lines.append(f"  {row['count']:>6}  {label}")
     return "\n".join(lines)
 
 
