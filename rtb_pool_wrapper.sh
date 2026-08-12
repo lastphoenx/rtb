@@ -88,7 +88,7 @@ if [[ "${1:-}" == "--force" ]]; then FORCE=1; shift; fi
 # ===== UPLOAD-ONLY mode ==============================================
 # Upload existing snapshot to pCloud without creating new RTB backup.
 # Use case: Re-upload after pCloud issues, or test uploads.
-#   /opt/apps/rtb/rtb_wrapper.sh --upload-only /mnt/backup/rtb_nas/2026-04-10-075334
+#   /opt/apps/rtb/rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/2026-04-10-075334
 UPLOAD_ONLY_SNAPSHOT=""
 if [[ "${1:-}" == "--upload-only" ]]; then
   UPLOAD_ONLY_SNAPSHOT="$2"
@@ -98,6 +98,25 @@ if [[ "${1:-}" == "--upload-only" ]]; then
     exit 1
   fi
   shift 2
+fi
+
+# ===== FINALIZE-ONLY mode ============================================
+# Integrity-Gate + .upload_complete + Index — wenn Pool+Stubs schon remote sind.
+#   /opt/apps/rtb/rtb_pool_wrapper.sh --finalize-only /mnt/backup/rtb_nas/2026-08-12-040144
+FINALIZE_ONLY_SNAPSHOT=""
+if [[ "${1:-}" == "--finalize-only" ]]; then
+  FINALIZE_ONLY_SNAPSHOT="$2"
+  if [[ -z "$FINALIZE_ONLY_SNAPSHOT" || ! -d "$FINALIZE_ONLY_SNAPSHOT" ]]; then
+    echo "❌ ERROR: --finalize-only requires valid snapshot path"
+    echo "Usage: $0 --finalize-only /mnt/backup/rtb_nas/SNAPSHOT_NAME"
+    exit 1
+  fi
+  shift 2
+fi
+
+if [[ -n "$UPLOAD_ONLY_SNAPSHOT" && -n "$FINALIZE_ONLY_SNAPSHOT" ]]; then
+  echo "❌ ERROR: --upload-only and --finalize-only are mutually exclusive"
+  exit 1
 fi
 
 # ===== CHECK-ONLY mode ===============================================
@@ -186,6 +205,42 @@ if [[ -n "$UPLOAD_ONLY_SNAPSHOT" ]]; then
 
     rm -f "$pcloud_out_file" || true
     log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT)"
+    exit $PCLOUD_EXIT
+  else
+    log "[error] pCloud-Sync nicht verfügbar: $PCLOUD_WRAPPER"
+    exit 1
+  fi
+fi
+
+# ===== Finalize-Only Shortcut ==========================================
+if [[ -n "$FINALIZE_ONLY_SNAPSHOT" ]]; then
+  log "[finalize-only] Überspringe RTB-Backup und Upload — nur Integrity + Complete + Index"
+  log "[finalize-only] Snapshot: $FINALIZE_ONLY_SNAPSHOT"
+  log "[finalize-only] Voraussetzung: Pool-Dateien + Stubs bereits remote (Phase 4 war OK)"
+
+  PCLOUD_WRAPPER=${PCLOUD_WRAPPER:-/opt/apps/pcloud-tools/main/wrapper_pcloud_pool_sync_1to1.sh}
+  PCLOUD_ENABLE=${PCLOUD_ENABLE:-1}
+
+  if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
+    log "[start] pCloud-Finalize (finalize-only mode)"
+    pcloud_out_file="$(mktemp /tmp/rtb_pcloud_finalize_only.XXXXXX)"
+    set +e
+    BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" "$FINALIZE_ONLY_SNAPSHOT" --finalize-only 2>&1 | tee "$pcloud_out_file"
+    PCLOUD_EXIT=${PIPESTATUS[0]}
+    set -e
+
+    if [[ $PCLOUD_EXIT -eq 0 ]]; then
+      if grep -q "Preflight: .*Sync wird übersprungen" "$pcloud_out_file"; then
+        log "[skip] pCloud-Finalize übersprungen (Preflight nicht OK)"
+      else
+        log "[done] pCloud-Finalize erfolgreich ✓"
+      fi
+      rm -f "$pcloud_out_file" || true
+      exit 0
+    fi
+
+    rm -f "$pcloud_out_file" || true
+    log "[error] pCloud-Finalize fehlgeschlagen (Exit $PCLOUD_EXIT)"
     exit $PCLOUD_EXIT
   else
     log "[error] pCloud-Sync nicht verfügbar: $PCLOUD_WRAPPER"
