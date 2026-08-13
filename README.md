@@ -318,6 +318,8 @@ sudo /opt/apps/rtb/rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/$(basen
 
 Siehe `pcloud-tools/docs/DASHBOARD.md` § Backup-Trigger vs. Pipeline.
 
+**Hinweis (Aug 2026):** `rtb_pool_wrapper.sh --check-only` läuft im Dashboard-Kontext nur im **full** `aggregate_status.sh` (alle 15 min + nach Backup), nicht im 5-min-Quick-Lauf. Dry-Run-Felder im Dashboard können daher bis ~15 min alt sein; Live Safety-Gate und RTB-Log-Status werden alle 5 min aktualisiert.
+
 Siehe auch [entropy-watcher NAS_FALSE_POSITIVES.md](../entropy-watcher-und-clamav-scanner/docs/NAS_FALSE_POSITIVES.md) — EntropyWatcher-Excludes (`common.env`) und RTB-Excludes sind **getrennte** Schichten.
 
 **Wrapper Auto-Exclude** (Laufzeit, konfigurierbar):
