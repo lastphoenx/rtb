@@ -91,7 +91,7 @@ if [[ "${1:-}" == "--force" ]]; then FORCE=1; shift; fi
 #   /opt/apps/rtb/rtb_pool_wrapper.sh --upload-only /mnt/backup/rtb_nas/2026-04-10-075334
 UPLOAD_ONLY_SNAPSHOT=""
 if [[ "${1:-}" == "--upload-only" ]]; then
-  UPLOAD_ONLY_SNAPSHOT="$2"
+  UPLOAD_ONLY_SNAPSHOT="${2:-}"
   if [[ -z "$UPLOAD_ONLY_SNAPSHOT" || ! -d "$UPLOAD_ONLY_SNAPSHOT" ]]; then
     echo "❌ ERROR: --upload-only requires valid snapshot path"
     echo "Usage: $0 --upload-only /mnt/backup/rtb_nas/SNAPSHOT_NAME"
@@ -105,7 +105,7 @@ fi
 #   /opt/apps/rtb/rtb_pool_wrapper.sh --finalize-only /mnt/backup/rtb_nas/2026-08-12-040144
 FINALIZE_ONLY_SNAPSHOT=""
 if [[ "${1:-}" == "--finalize-only" ]]; then
-  FINALIZE_ONLY_SNAPSHOT="$2"
+  FINALIZE_ONLY_SNAPSHOT="${2:-}"
   if [[ -z "$FINALIZE_ONLY_SNAPSHOT" || ! -d "$FINALIZE_ONLY_SNAPSHOT" ]]; then
     echo "❌ ERROR: --finalize-only requires valid snapshot path"
     echo "Usage: $0 --finalize-only /mnt/backup/rtb_nas/SNAPSHOT_NAME"
