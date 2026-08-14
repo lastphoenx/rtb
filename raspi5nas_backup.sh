@@ -64,12 +64,17 @@ rsync -a --delete \
 # --- 3) MariaDB logical dumps (root + unix_socket, kein Passwort nötig) ---
 _mysql_cli() {
   if command -v mariadb >/dev/null 2>&1; then
-    mariadb
+    mariadb --batch "$@"
   elif command -v mysql >/dev/null 2>&1; then
-    mysql
+    mysql --batch "$@"
   else
     return 127
   fi
+}
+
+_db_exists() {
+  local db="$1"
+  _mysql_cli -N -B "$db" -e "SELECT 1" 2>/dev/null | grep -q '^1$'
 }
 
 _dump_cmd() {
@@ -91,7 +96,7 @@ _dump_db() {
   local db="$1"
   local out="$2"
   local dump_bin="$3"
-  if ! _mysql_cli -N -e "USE ${db}" 2>/dev/null; then
+  if ! _db_exists "$db"; then
     log "[mariadb] übersprungen (DB nicht vorhanden): ${db}"
     return 0
   fi
