@@ -13,6 +13,9 @@
 # Nutzerdaten ein Backup triggern (s. excludes + rtb_check_excludes.sh).
 #
 # Läuft täglich um 03:00 via raspi5nas-backup.timer, unabhängig von pCloud.
+#
+# Pakete auf pi-nas (einmalig, falls Dumps/SQLite fehlen):
+#   sudo apt install mariadb-client sqlite3
 # =============================================================================
 set -euo pipefail
 
@@ -20,6 +23,7 @@ DEST="/srv/nas/Backup/raspi5nas"
 LOG="/var/log/backup/raspi5nas_backup.log"
 PIPELINE_LOCK="${PIPELINE_LOCK:-/run/backup_pipeline.lock}"
 PCLOUD_ARCHIVE_DIR="${PCLOUD_ARCHIVE_DIR:-/srv/pcloud-archive}"
+PCLOUD_VENV_PYTHON="${PCLOUD_VENV_PYTHON:-/opt/apps/pcloud-tools/venv/bin/python}"
 MARIADB_DUMP_DATABASES="${MARIADB_DUMP_DATABASES:-pcloud_backup entropywatcher}"
 
 mkdir -p "$(dirname "$LOG")"
@@ -58,24 +62,40 @@ rsync -a --delete \
   /etc/systemd/system/ "$DEST/systemd/" 2>&1 | tee -a "$LOG" || RC=$?
 
 # --- 3) MariaDB logical dumps (root + unix_socket, kein Passwort nötig) ---
-_dump_cmd() {
-  if command -v mariadb-dump >/dev/null 2>&1; then
-    mariadb-dump
-  elif command -v mysqldump >/dev/null 2>&1; then
-    mysqldump
+_mysql_cli() {
+  if command -v mariadb >/dev/null 2>&1; then
+    mariadb
+  elif command -v mysql >/dev/null 2>&1; then
+    mysql
   else
     return 127
   fi
 }
 
+_dump_cmd() {
+  local c
+  for c in mariadb-dump mysqldump /usr/bin/mariadb-dump /usr/bin/mysqldump; do
+    if command -v "$c" >/dev/null 2>&1; then
+      command -v "$c"
+      return 0
+    fi
+    if [[ -x "$c" ]]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 127
+}
+
 _dump_db() {
   local db="$1"
   local out="$2"
-  if ! mysql -N -e "USE ${db}" 2>/dev/null; then
+  local dump_bin="$3"
+  if ! _mysql_cli -N -e "USE ${db}" 2>/dev/null; then
     log "[mariadb] übersprungen (DB nicht vorhanden): ${db}"
     return 0
   fi
-  if ! _dump_cmd --single-transaction --routines --events "$db" 2>/dev/null | gzip -c >"$out"; then
+  if ! "$dump_bin" --single-transaction --routines --events "$db" 2>/dev/null | gzip -c >"$out"; then
     log "[warn] mariadb dump fehlgeschlagen: ${db}"
     return 1
   fi
@@ -86,14 +106,14 @@ _dump_db() {
 DUMP_DIR="$DEST/mariadb-dumps"
 mkdir -p "$DUMP_DIR"
 STAMP="$(date +%Y%m%d)"
-if _dump_cmd --version >/dev/null 2>&1; then
+DUMP_BIN=""
+if DUMP_BIN="$(_dump_cmd)"; then
   for db in $MARIADB_DUMP_DATABASES; do
-    _dump_db "$db" "$DUMP_DIR/${db}-${STAMP}.sql.gz" || RC=$?
+    _dump_db "$db" "$DUMP_DIR/${db}-${STAMP}.sql.gz" "$DUMP_BIN" || RC=$?
   done
-  # Gestern-Tages-Dumps entfernen (heute + gestern behalten)
   find "$DUMP_DIR" -maxdepth 1 -type f -name '*.sql.gz' -mtime +1 -delete 2>/dev/null || true
 else
-  log "[warn] mariadb-dump/mysqldump nicht gefunden — DB-Dumps übersprungen"
+  log "[warn] mariadb-dump/mysqldump nicht gefunden — apt install mariadb-client"
 fi
 
 # --- 4) C1 pool index (SQLite hot-backup + Master-JSON Spiegel) ---
@@ -113,23 +133,37 @@ else
   log "[index] kein Master-JSON unter $MASTER_JSON"
 fi
 
-if [[ -f "$SQLITE_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
-  if flock -n "$PIPELINE_LOCK" \
-    sqlite3 "$SQLITE_DB" ".backup '${SQLITE_OUT}'"; then
+_sqlite_hot_backup() {
+  local db="$1"
+  local out="$2"
+  if command -v sqlite3 >/dev/null 2>&1; then
+    sqlite3 "$db" ".backup '${out}'"
+    return 0
+  fi
+  if [[ -x "$PCLOUD_VENV_PYTHON" ]]; then
+    "$PCLOUD_VENV_PYTHON" -c "
+import sqlite3
+sqlite3.connect('${db}').backup(sqlite3.connect('${out}'))
+"
+    return 0
+  fi
+  return 127
+}
+
+if [[ -f "$SQLITE_DB" ]]; then
+  if flock -n "$PIPELINE_LOCK" bash -c "$(declare -f _sqlite_hot_backup); _sqlite_hot_backup '$SQLITE_DB' '$SQLITE_OUT'"; then
     log "[sqlite] pool_index hot-backup OK ($(du -h "$SQLITE_OUT" | awk '{print $1}'))"
   else
     log "[sqlite] Lock belegt — versuche backup ohne Lock (kurz)"
-    if sqlite3 "$SQLITE_DB" ".backup '${SQLITE_OUT}'" 2>/dev/null; then
+    if _sqlite_hot_backup "$SQLITE_DB" "$SQLITE_OUT" 2>/dev/null; then
       log "[sqlite] pool_index backup OK (ohne Lock)"
     else
-      log "[warn] pool_index backup fehlgeschlagen (Pipeline aktiv?)"
+      log "[warn] pool_index backup fehlgeschlagen — apt install sqlite3"
       RC=$?
     fi
   fi
-elif [[ ! -f "$SQLITE_DB" ]]; then
-  log "[sqlite] keine DB (C1 aus oder noch nicht importiert)"
 else
-  log "[warn] sqlite3 CLI fehlt — pool_index nicht gesichert"
+  log "[sqlite] keine DB (C1 aus oder noch nicht importiert)"
 fi
 
 if [[ $RC -eq 0 ]]; then
