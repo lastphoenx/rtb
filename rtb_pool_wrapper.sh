@@ -165,6 +165,47 @@ if [[ "$RTB_AUTO_EXCLUDE_RESTORE" == "1" ]]; then
   log "[cfg] Loop guard exclude active: $RTB_RESTORE_EXCLUDE_PATTERN"
 fi
 
+# ===== EntropyWatcher Safety-Check (vor Lock — Gate ist schnell, kein Heavy-Op) =====
+if [[ "$ENTROPYWATCHER_ENABLE" -eq 1 && "$FORCE" -ne 1 ]]; then
+  log "[safety] EntropyWatcher Safety-Gate prüft nas + nas-av..."
+  if [[ -x "$ENTROPYWATCHER_SAFETY_GATE" ]]; then
+    set +e
+    if [[ "$SAFETY_GATE_STRICT" -eq 1 ]]; then
+      "$ENTROPYWATCHER_SAFETY_GATE" --strict
+    else
+      "$ENTROPYWATCHER_SAFETY_GATE"
+    fi
+    STATUS_CODE=$?
+    set -e
+
+    case $STATUS_CODE in
+      0)
+        log "[safety] ✓ GREEN - Backup darf starten"
+        ;;
+      1)
+        if [[ "$SAFETY_GATE_STRICT" -eq 1 ]]; then
+          log "[ABORT] ⚠ YELLOW - Backup BLOCKIERT (strict mode aktiv)"
+          exit 1
+        else
+          log "[safety] ⚠ YELLOW - Backup läuft mit Warnung"
+        fi
+        ;;
+      2)
+        log "[ABORT] ✗ RED - Backup BLOCKIERT! (Ransomware/Viren-Verdacht)"
+        exit 2
+        ;;
+      *)
+        log "[warning] Unbekannter Status ($STATUS_CODE) - Backup blockiert"
+        exit 2
+        ;;
+    esac
+  else
+    log "[skip] Safety-Gate nicht verfügbar: $ENTROPYWATCHER_SAFETY_GATE"
+  fi
+elif [[ "$FORCE" -eq 1 ]]; then
+  log "[safety] Safety-Check übersprungen (--force aktiv)"
+fi
+
 # ===== Lock holen (Backup + pCloud + exkl. parallele AV/Entropy auf /srv/nas) =====
 if [[ "${NAS_HEAVY_OPS_FAIL_FAST:-0}" == "1" ]] && nas_heavy_ops_is_busy; then
   log "[skip] NAS-Heavy-Ops-Lock belegt (pCloud/AV/anderer RTB) — Fail-Fast"
@@ -246,47 +287,6 @@ if [[ -n "$FINALIZE_ONLY_SNAPSHOT" ]]; then
     log "[error] pCloud-Sync nicht verfügbar: $PCLOUD_WRAPPER"
     exit 1
   fi
-fi
-
-# ===== EntropyWatcher Safety-Check =====
-if [[ "$ENTROPYWATCHER_ENABLE" -eq 1 && "$FORCE" -ne 1 ]]; then
-  log "[safety] EntropyWatcher Safety-Gate prüft nas + nas-av..."
-  if [[ -x "$ENTROPYWATCHER_SAFETY_GATE" ]]; then
-    set +e
-    if [[ "$SAFETY_GATE_STRICT" -eq 1 ]]; then
-      "$ENTROPYWATCHER_SAFETY_GATE" --strict
-    else
-      "$ENTROPYWATCHER_SAFETY_GATE"
-    fi
-    STATUS_CODE=$?
-    set -e
-    
-    case $STATUS_CODE in
-      0) 
-        log "[safety] ✓ GREEN - Backup darf starten" 
-        ;;
-      1) 
-        if [[ "$SAFETY_GATE_STRICT" -eq 1 ]]; then
-          log "[ABORT] ⚠ YELLOW - Backup BLOCKIERT (strict mode aktiv)"
-          exit 1
-        else
-          log "[safety] ⚠ YELLOW - Backup läuft mit Warnung"
-        fi
-        ;;
-      2) 
-        log "[ABORT] ✗ RED - Backup BLOCKIERT! (Ransomware/Viren-Verdacht)"
-        exit 2
-        ;;
-      *) 
-        log "[warning] Unbekannter Status ($STATUS_CODE) - Backup blockiert"
-        exit 2
-        ;;
-    esac
-  else
-    log "[skip] Safety-Gate nicht verfügbar: $ENTROPYWATCHER_SAFETY_GATE"
-  fi
-elif [[ "$FORCE" -eq 1 ]]; then
-  log "[safety] Safety-Check übersprungen (--force aktiv)"
 fi
 
 # ===== Pre-Check: Änderungen seit letztem Snapshot? =====
@@ -373,7 +373,14 @@ else
     sudo bash "$RTB_SCRIPT" --rsync-set-flags "$RTB_BACKUP_RSYNC_FLAGS" "$SRC" "$RTB" "$EFFECTIVE_RTB_EXCL" >"$rtb_backup_out" 2>&1
   fi
   RTB_EXIT=$?
-  grep -E '^(rsync_tmbackup|rtb_staged_backup):|^\[RTB BackupSummary JSON\]' "$rtb_backup_out" || true
+  grep -E '(rsync_tmbackup|rtb_staged_backup):|\[RTB BackupSummary JSON\]' "$rtb_backup_out" || true
+  if [[ $RTB_EXIT -eq 0 && "$RTB_STAGED" == "1" ]]; then
+    _snap_name="$(basename "$(readlink -f "${RTB}/latest" 2>/dev/null || echo "")")"
+    _staged_log="${HOME:-/root}/.rsync_tmbackup/${_snap_name}.log"
+    if [[ -n "$_snap_name" && -f "$_staged_log" ]]; then
+      grep -E '(rtb_staged_backup):|\[RTB BackupSummary JSON\]' "$_staged_log" || true
+    fi
+  fi
   if [[ $RTB_EXIT -ne 0 ]]; then
     log "[error] rsync_tmbackup Ausgabe (Auszug):"
     tail -40 "$rtb_backup_out" || true

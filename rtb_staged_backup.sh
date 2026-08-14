@@ -7,6 +7,10 @@
 set -euo pipefail
 
 RTB_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON3="$(command -v python3 2>/dev/null || true)"
+if [[ -z "$PYTHON3" && -x /usr/bin/python3 ]]; then
+  PYTHON3=/usr/bin/python3
+fi
 
 APPNAME="rtb_staged_backup"
 
@@ -358,6 +362,8 @@ fi
 
 echo "$MYPID" >"$INPROGRESS_FILE"
 LOG_FILE="$LOG_DIR/$(basename "$DEST").log"
+touch "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 rtb_staged_load_excludes
 UNITS=()
@@ -378,8 +384,8 @@ for unit in "${UNITS[@]}"; do
   unit_idx=$((unit_idx + 1))
   if rtb_unit_done "$unit"; then
     fn_log_info "[$unit_idx/${#UNITS[@]}] skip (fertig): $unit"
-    if command -v python3 &>/dev/null; then
-      SUMMARY_JSON_LINES+=("$(python3 "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --unit "$unit" --status skipped)")
+    if [[ -n "$PYTHON3" ]]; then
+      SUMMARY_JSON_LINES+=("$("$PYTHON3" "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --unit "$unit" --status skipped)")
     fi
     continue
   fi
@@ -440,8 +446,8 @@ for unit in "${UNITS[@]}"; do
 
   rtb_mark_unit_done "$unit"
   fn_log_info "[$unit_idx/${#UNITS[@]}] ok: $unit"
-  if command -v python3 &>/dev/null; then
-    SUMMARY_JSON_LINES+=("$(python3 "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --unit "$unit" --status ok --parse-stats-file "$rsync_capture")")
+  if [[ -n "$PYTHON3" ]]; then
+    SUMMARY_JSON_LINES+=("$("$PYTHON3" "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --unit "$unit" --status ok --parse-stats-file "$rsync_capture")")
   fi
   rm -f "$rsync_capture"
 done
@@ -454,7 +460,9 @@ rm -f "$INPROGRESS_FILE" "$ACTIVE_FILE"
 fn_log_info "Backup completed without errors."
 fn_log_info "latest -> $(basename "$DEST")"
 
-if command -v python3 &>/dev/null && [[ ${#SUMMARY_JSON_LINES[@]} -gt 0 ]]; then
-  printf '%s\n' "${SUMMARY_JSON_LINES[@]}" | python3 "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --aggregate --snapshot "$(basename "$DEST")"
+if [[ ${#SUMMARY_JSON_LINES[@]} -gt 0 && -n "$PYTHON3" ]]; then
+  printf '%s\n' "${SUMMARY_JSON_LINES[@]}" | "$PYTHON3" "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --aggregate --snapshot "$(basename "$DEST")"
+elif [[ ${#SUMMARY_JSON_LINES[@]} -gt 0 ]]; then
+  fn_log_warn "python3 nicht gefunden — BackupSummary übersprungen"
 fi
 exit 0
