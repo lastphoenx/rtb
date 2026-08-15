@@ -235,7 +235,7 @@ if [[ -n "$UPLOAD_ONLY_SNAPSHOT" ]]; then
     set -e
 
     if [[ $PCLOUD_EXIT -eq 0 ]]; then
-      if grep -q "Preflight: .*Sync wird übersprungen" "$pcloud_out_file"; then
+      if grep -qE 'Sync wird übersprungen|Preflight fehlgeschlagen' "$pcloud_out_file"; then
         log "[skip] pCloud-Sync übersprungen (Preflight nicht OK)"
       else
         log "[done] pCloud-Sync erfolgreich ✓"
@@ -271,7 +271,7 @@ if [[ -n "$FINALIZE_ONLY_SNAPSHOT" ]]; then
     set -e
 
     if [[ $PCLOUD_EXIT -eq 0 ]]; then
-      if grep -q "Preflight: .*Sync wird übersprungen" "$pcloud_out_file"; then
+      if grep -qE 'Sync wird übersprungen|Preflight fehlgeschlagen' "$pcloud_out_file"; then
         log "[skip] pCloud-Finalize übersprungen (Preflight nicht OK)"
       else
         log "[done] pCloud-Finalize erfolgreich ✓"
@@ -411,7 +411,7 @@ if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
   set -e
 
   if [[ $PCLOUD_EXIT -eq 0 ]]; then
-    if grep -q "Preflight: .*Sync wird übersprungen" "$pcloud_out_file"; then
+    if grep -qE 'Sync wird übersprungen|Preflight fehlgeschlagen' "$pcloud_out_file"; then
       log "[skip] pCloud-Sync übersprungen (Preflight nicht OK)"
       log "[done] Backup-Pipeline komplett (RTB ok, pCloud übersprungen)"
     else
