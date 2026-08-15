@@ -43,3 +43,12 @@ venv/
 # PBS2 runtime state on NAS (ephemeral; GC/lock changes every cycle)
 /Backup/pbs2/.lock
 /Backup/pbs2/.gc-status
+
+# gmk-evo: nur Config-Backup (evo-backup.sh) — kein Full-System auf NAS
+# Falls evo-backup je voll synchronisiert hat: Altlast bleibt in alten RTB-Snaps (hardlinks).
+/Backup/gmk-evo/usr/
+/Backup/gmk-evo/var/
+/Backup/gmk-evo/boot/
+/Backup/gmk-evo/home/
+/Backup/gmk-evo/opt/ollama/
+/Backup/gmk-evo/usr/local/lib/ollama/
