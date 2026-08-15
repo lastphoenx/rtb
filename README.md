@@ -1,6 +1,6 @@
 # RTB Wrapper - Delta Detection for Rsync Time Backup
 
-Delta-gesteuerter Wrapper für [Rsync Time Backup](https://github.com/laurent22/rsync-time-backup). Prüft vor Backup-Ausführung ob Änderungen vorliegen (via `rsync --dry-run`) und überspringt unnötige Backups.
+Delta-gesteuerter Wrapper für [Rsync Time Backup](https://github.com/laurent22/rsync-time-backup). Prüft vor Backup-Ausführung ob Änderungen vorliegen und überspringt unnötige Backups. **Produktion (pi-nas):** `RTB_TRIGGER_MODE=signature` (low-RAM) statt `rsync --dry-run` über den Vollbaum; Einstieg `rtb_pool_wrapper.sh` → staged RTB → pCloud Pool-Sync.
 
 Funktioniert auf Linux/Debian. Hauptvorteil: **Ressourcen-Effizienz** - Backups werden nur bei echten Deltas ausgeführt, nicht nach starrem Zeitplan. Integriert mit EntropyWatcher Safety Gate für sichere Backups.
 
@@ -147,18 +147,21 @@ Mit funktionierender lokaler Backup- und Security-Pipeline kam die Frage: **Wie 
 └─────────────────────────────────────────────────────────────┘
                             ↓ (nur bei GREEN)
 ┌─────────────────────────────────────────────────────────────┐
-│  2. RTB Wrapper prüft: Hat sich was geändert?               │
-│     ↓ JA = Delta erkannt | NEIN = Skip Backup               │
-└─────────────────────────────────────────────────────────────┘
-                            ↓ (nur bei Delta)
-┌─────────────────────────────────────────────────────────────┐
-│  3. Rsync Time Backup (lokale Snapshots mit Hard-Links)     │
+│  2. rtb_pool_wrapper.sh — NAS-Lock, Signature-/Delta-Trigger │
+│     ↓ Änderung | --force | Catch-up                         │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  4. pCloud-Tools (deduplizierter Upload in Cloud)           │
+│  3. rtb_staged_backup (~32 rsync-Einheiten, Hardlinks)       │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  4. pCloud-Tools Pool-Mode (Scout / Turbo-Delta / Pool)     │
+│     wrapper_pcloud_pool_sync_1to1.sh                        │
 └─────────────────────────────────────────────────────────────┘
 
+  NAS Heavy-Ops-Lock: RTB, pCloud-Upload und ClamAV/Entropy nicht parallel.
+  Timer backup-pipeline: 04:00 / 12:00 / 20:00 · TimeoutStartSec=12h (Catch-up).
        [Honeyfiles überwachen parallel das gesamte System]
 ```
 
@@ -222,6 +225,8 @@ bash rtb_pool_wrapper.sh --check-only
 
 # Systemd (backup-pipeline.service → rtb_pool_wrapper.sh)
 sudo systemctl status backup-pipeline.timer
+# Timer: 04:00, 12:00, 20:00 · TimeoutStartSec=12h (lang Catch-up / Full-Pool)
+# pCloud Catch-up: 1 fehlender Snap pro Lauf — siehe pcloud-tools README
 ```
 
 **Konfiguration:** `rtb_pool_wrapper.sh` für Source/Destination Paths und Exclude-Patterns (`excludes.txt`).
@@ -440,32 +445,15 @@ esac
 
 ## Integration with Backup Pipeline
 
-Dieses Tool ist **Stufe 2-3** in der automatisierten Backup-Pipeline:
+Dieses Tool ist **Stufe 2–4** in der automatisierten Backup-Pipeline (pi-nas):
 
-1. **EntropyWatcher + ClamAV** (Safety Gate) → EXIT 0 = GREEN
-2. **RTB Wrapper** (dieser Repo) → prüft Delta via `rsync --dry-run`
-3. **Rsync Time Backup** (upstream) → erstellt lokalen Snapshot (nur bei Delta)
-4. **pCloud-Tools** → deduplizierter Cloud-Upload
+1. **EntropyWatcher + ClamAV** (Safety Gate) → GREEN/YELLOW erlaubt Backup
+2. **rtb_pool_wrapper.sh** (dieser Repo) → NAS-Lock, Signature- oder rsync-Trigger
+3. **rtb_staged_backup** → lokaler Hardlink-Snapshot (nur bei Delta / Force)
+4. **pCloud-Tools** → Pool-Upload (`wrapper_pcloud_pool_sync_1to1.sh`, Turbo-Delta)
 
-**Ablauf:**
-
-```bash
-# safety_gate.sh wird aufgerufen
-if [ $GATE_STATUS -ne 0 ]; then
-  echo "Safety Gate RED - Backup blockiert"
-  exit 2
-fi
-
-# Delta-Check
-DELTA_FILES=$(rsync --dry-run --itemize-changes ...)
-if [ -z "$DELTA_FILES" ]; then
-  echo "Kein Delta erkannt - Backup übersprungen"
-  exit 0
-fi
-
-# Backup ausführen
-bash rsync_tmbackup.sh "$SOURCE" "$DEST"
-```
+Gemeinsamer Lock `/run/backup_pipeline.lock` mit pCloud und Security-Scans auf `/srv/nas`.  
+Durchlaufzeiten, C1 SQLite, Catch-up: [pcloud-tools README](https://github.com/lastphoenx/pcloud-tools#durchlaufzeiten--phasen).
 
 ---
 
