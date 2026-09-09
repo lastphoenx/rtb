@@ -222,6 +222,9 @@ log "[start] RTB"
 if [[ -n "$UPLOAD_ONLY_SNAPSHOT" ]]; then
   log "[upload-only] Überspringe RTB-Backup, starte direkt pCloud-Upload (POOL-MODE)"
   log "[upload-only] Snapshot: $UPLOAD_ONLY_SNAPSHOT"
+  # Unvollständige Remote-Snapshots mit .upload_started: kein delete+copyfolder (~14min sparen)
+  export PCLOUD_DELTA_RESUME_INCOMPLETE="${PCLOUD_DELTA_RESUME_INCOMPLETE:-auto}"
+  log "[upload-only] PCLOUD_DELTA_RESUME_INCOMPLETE=${PCLOUD_DELTA_RESUME_INCOMPLETE}"
   
   PCLOUD_WRAPPER=${PCLOUD_WRAPPER:-/opt/apps/pcloud-tools/main/wrapper_pcloud_pool_sync_1to1.sh}
   PCLOUD_ENABLE=${PCLOUD_ENABLE:-1}
