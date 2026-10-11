@@ -1,0 +1,13 @@
+[Unit]
+Description=pCloud Pipeline-Manifeste → USB (außerhalb /srv/nas)
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/default/pcloud-manifests-backup
+ExecStart=/opt/apps/rtb/pcloud_manifests_usb_backup.sh
+StandardOutput=append:/var/log/backup/pcloud_manifests_backup.log
+StandardError=append:/var/log/backup/pcloud_manifests_backup.log
+Nice=19
+IOSchedulingClass=idle
