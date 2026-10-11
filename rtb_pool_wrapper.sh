@@ -247,6 +247,10 @@ if [[ -n "$UPLOAD_ONLY_SNAPSHOT" ]]; then
       exit 0
     fi
 
+    _fail_copy="/var/log/backup/pcloud_pipeline_fail_$(date +%Y%m%d_%H%M%S).log"
+    if cp -f "$pcloud_out_file" "$_fail_copy" 2>/dev/null; then
+      log "[error] Pipeline-Log archiviert: $_fail_copy"
+    fi
     rm -f "$pcloud_out_file" || true
     log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT)"
     exit $PCLOUD_EXIT
@@ -283,6 +287,10 @@ if [[ -n "$FINALIZE_ONLY_SNAPSHOT" ]]; then
       exit 0
     fi
 
+    _fail_copy="/var/log/backup/pcloud_pipeline_fail_$(date +%Y%m%d_%H%M%S).log"
+    if cp -f "$pcloud_out_file" "$_fail_copy" 2>/dev/null; then
+      log "[error] Pipeline-Log archiviert: $_fail_copy"
+    fi
     rm -f "$pcloud_out_file" || true
     log "[error] pCloud-Finalize fehlgeschlagen (Exit $PCLOUD_EXIT)"
     exit $PCLOUD_EXIT
@@ -310,7 +318,7 @@ if [[ "$STAGED_RESUME" -eq 0 && -n "$LAST" && -d "$LAST" ]]; then
   rtb_backup_trigger_run_locked "${SRC}" "$LAST" "${EFFECTIVE_RTB_CHECK_EXCL}" "${EFFECTIVE_RTB_EXCL}" "${SCRIPT_DIR}"
   trigger_rc=$?
   unset RTB_TRIGGER_IN_BACKUP
-  set +e
+  set -e
 
   log "[check] Delta-Check exit=$trigger_rc"
 
@@ -389,7 +397,7 @@ else
     tail -40 "$rtb_backup_out" || true
   fi
   rm -f "$rtb_backup_out"
-  set +e
+  set -e
 
   if [[ $RTB_EXIT -ne 0 ]]; then
     log "[ABORT] RTB fehlgeschlagen (Exit $RTB_EXIT) - pCloud-Sync wird übersprungen"

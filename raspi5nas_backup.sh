@@ -100,10 +100,13 @@ _dump_db() {
     log "[mariadb] übersprungen (DB nicht vorhanden): ${db}"
     return 0
   fi
-  if ! "$dump_bin" --single-transaction --routines --events "$db" 2>/dev/null | gzip -c >"$out"; then
+  local tmp="${out}.partial.$$"
+  if ! "$dump_bin" --single-transaction --routines --events "$db" 2>/dev/null | gzip -c >"$tmp"; then
+    rm -f "$tmp"
     log "[warn] mariadb dump fehlgeschlagen: ${db}"
     return 1
   fi
+  mv -f "$tmp" "$out"
   log "[mariadb] dump OK: ${db} ($(du -h "$out" | awk '{print $1}'))"
   return 0
 }
@@ -131,9 +134,12 @@ SQLITE_OUT="$DEST_IDX/pool_index.sqlite3"
 mkdir -p "$DEST_IDX"
 
 if [[ -f "$MASTER_JSON" ]]; then
-  cp -a "$MASTER_JSON" "$DEST_IDX/content_index_master.json" \
-    && log "[index] Master-JSON kopiert ($(du -h "$DEST_IDX/content_index_master.json" | awk '{print $1}'))" \
-    || { log "[warn] Master-JSON Kopie fehlgeschlagen"; RC=$?; }
+  if cp -a "$MASTER_JSON" "$DEST_IDX/content_index_master.json"; then
+    log "[index] Master-JSON kopiert ($(du -h "$DEST_IDX/content_index_master.json" | awk '{print $1}'))"
+  else
+    log "[warn] Master-JSON Kopie fehlgeschlagen"
+    RC=1
+  fi
 else
   log "[index] kein Master-JSON unter $MASTER_JSON"
 fi
@@ -164,7 +170,7 @@ if [[ -f "$SQLITE_DB" ]]; then
       log "[sqlite] pool_index backup OK (ohne Lock)"
     else
       log "[warn] pool_index backup fehlgeschlagen — apt install sqlite3"
-      RC=$?
+      RC=1
     fi
   fi
 else
