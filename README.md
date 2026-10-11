@@ -289,7 +289,7 @@ __pycache__/  *.py[cod]  **/._*
 | Thema | Detail |
 |-------|--------|
 | Einheiten | Top-Level unter `/srv/nas`, `Backup/pbs2/{vm,ct,.chunks,ns}`, je `Backup/<name>`, `pcloud-archive`/`pcloud-temp` gesplittet wenn &gt; `RTB_STAGED_SPLIT_THRESHOLD` (15000) |
-| Excludes | `excludes.txt` gilt auch beim **Erzeugen** der Unit-Liste — `/pcloud-archive/staging/` wird nicht gesplittet (keine ~47k Einheiten) |
+| Excludes | `excludes.txt` gilt auch beim **Erzeugen** der Unit-Liste — `/pcloud-archive/staging/` ausgeschlossen; unter `indexes/` nur `content_index_master.json` (kein `pool_index*.sqlite3`, kein `*.bak`) |
 | Top-Level-Dateien | `README.txt` etc. direkt unter `/srv/nas/` werden als Datei-rsync gesichert (nicht als Ordner) |
 | Resume | `backup.inprogress` + `.rtb_staged_active` + `.rtb_staged_done` — Wrapper überspringt Delta-Check bei offenem Staged-Lauf |
 | Fallback | `RTB_STAGED=0` → vanilla `rsync_tmbackup.sh` |
