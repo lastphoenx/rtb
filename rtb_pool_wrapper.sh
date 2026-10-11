@@ -410,7 +410,7 @@ if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
   # Kein tee auf Parent-stdout — voller pCloud-Log nur in Temp, Kurzzeilen ins Wrapper-Log.
   BACKUP_PIPELINE_LOCKED=1 bash "$PCLOUD_WRAPPER" >"$pcloud_out_file" 2>&1
   PCLOUD_EXIT=$?
-  grep -E '^\[(INFO|WARN|ERROR|manifest|scan|upload)\]' "$pcloud_out_file" 2>/dev/null | tail -50 || true
+  grep -E '^\[(INFO|WARN|ERROR|manifest|scan|upload|integrity-gate|delta-mode)\]' "$pcloud_out_file" 2>/dev/null | tail -50 || true
   set -e
 
   if [[ $PCLOUD_EXIT -eq 0 ]]; then
@@ -423,8 +423,14 @@ if [[ "$PCLOUD_ENABLE" -eq 1 && -x "$PCLOUD_WRAPPER" ]]; then
     fi
     rm -f "$pcloud_out_file" || true
   else
+    log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT) — Auszug integrity/gate/errors:"
+    grep -E '\[(ERROR|integrity-gate|delta-mode)\]|Integrity-Gate|upload_failed|Traceback' "$pcloud_out_file" 2>/dev/null | tail -30 || true
+    _fail_copy="/var/log/backup/pcloud_pipeline_fail_$(date +%Y%m%d_%H%M%S).log"
+    if cp -f "$pcloud_out_file" "$_fail_copy" 2>/dev/null; then
+      log "[error] Pipeline-Log archiviert: $_fail_copy"
+    fi
+    log "[error] Vollständig auch: ${PCLOUD_LOG:-/var/log/backup/pcloud_sync.log}"
     rm -f "$pcloud_out_file" || true
-    log "[error] pCloud-Sync fehlgeschlagen (Exit $PCLOUD_EXIT)"
     exit $PCLOUD_EXIT
   fi
 else
