@@ -3,9 +3,8 @@
 # pcloud_manifests_usb_backup.sh — Pipeline-Manifeste (SSD2) auf externe USB,
 # bewusst NICHT unter /srv/nas (kein RTB-Trigger, kein pCloud-Pool-Backup).
 #
-# Konfiguration (pi-nas): /etc/default/pcloud-manifests-backup
-#   PCLOUD_MANIFESTS_BACKUP_DEST=/mnt/<dein-usb>/pcloud-archive-manifests
-#   PCLOUD_ARCHIVE_DIR=/srv/pcloud-archive   (optional)
+# Konfiguration (pi-nas): Environment= in pcloud-manifests-backup.service
+# (unter /etc/systemd/system/ nach git pull kopieren)
 #
 # Erster Lauf: volle ~7 GB. Danach: meist 1 neues JSON pro Backup-Tag (~80 MB).
 # Timer: pcloud-manifests-backup.timer (Standard 22:15, nach 20:00-Pipeline-Slot).
@@ -22,7 +21,7 @@ log() { printf "%s %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
 mkdir -p "$(dirname "$LOG")"
 
 if [[ -z "${DEST}" ]]; then
-  log "[skip] PCLOUD_MANIFESTS_BACKUP_DEST nicht gesetzt (siehe /etc/default/pcloud-manifests-backup)"
+  log "[skip] PCLOUD_MANIFESTS_BACKUP_DEST nicht gesetzt (Environment in pcloud-manifests-backup.service)"
   exit 0
 fi
 

@@ -1,11 +1,14 @@
 [Unit]
-Description=pCloud Pipeline-Manifeste → USB (außerhalb /srv/nas)
-After=network.target
+Description=pCloud Pipeline-Manifeste → Backup-HDD (außerhalb /srv/nas)
+After=network.target local-fs.target
+ConditionPathIsMountPoint=/mnt/backup
 
 [Service]
 Type=oneshot
 User=root
-EnvironmentFile=-/etc/default/pcloud-manifests-backup
+# Pfade hier anpassen (pi-nas), dann nach /etc/systemd/system/ kopieren
+Environment=PCLOUD_ARCHIVE_DIR=/srv/pcloud-archive
+Environment=PCLOUD_MANIFESTS_BACKUP_DEST=/mnt/backup/pcloud-archive-manifests
 ExecStart=/opt/apps/rtb/pcloud_manifests_usb_backup.sh
 StandardOutput=append:/var/log/backup/pcloud_manifests_backup.log
 StandardError=append:/var/log/backup/pcloud_manifests_backup.log
