@@ -55,3 +55,5 @@ venv/
 
 # raspi5nas: nur content_index_master.json im Spiegel (~1–2 GB); SQLite rebuildbar
 /Backup/raspi5nas/pcloud-archive-indexes/pool_index.sqlite3
+/Backup/raspi5nas/pcloud-archive-indexes/pool_index.sqlite3.bak*
+/Backup/raspi5nas/pcloud-archive-indexes/*.bak
