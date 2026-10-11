@@ -346,7 +346,7 @@ Die effektive Exclude-Datei wird an rsync unterschiedlich übergeben:
 | `RTB_TRIGGER_MODE=rsync` | Legacy `rsync -ni` (OOM-Risiko) | **ja** (Post-Filter via `rtb_check_only_delta.py`) |
 | Tatsächlicher `rsync_tmbackup.sh` | echtes rsync | **nein** — mitgesichert wenn Backup läuft |
 
-`rtb_check_excludes.sh` baut die Check-Liste aus `excludes.txt` + Pipeline-Patterns. Kein separater Export nach `Backup/raspi5nas/pcloud-*` nötig (`raspi5nas_backup.sh` sichert nur `/opt/apps` + systemd).
+`rtb_check_excludes.sh` baut die Check-Liste aus `excludes.txt` + Pipeline-Patterns. `raspi5nas_backup.sh` sichert `/opt/apps`, systemd, MariaDB-Dumps und `content_index_master.json` unter `Backup/raspi5nas/pcloud-archive-indexes/` — **nicht** `pool_index.sqlite3` (siehe `excludes.txt`).
 
 Das Wrapper-Log zeigt beim Start:
 ```
