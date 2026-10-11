@@ -348,7 +348,7 @@ Die effektive Exclude-Datei wird an rsync unterschiedlich übergeben:
 
 `rtb_check_excludes.sh` baut die Check-Liste aus `excludes.txt` + Pipeline-Patterns. `raspi5nas_backup.sh` sichert `/opt/apps`, systemd, MariaDB-Dumps und `content_index_master.json` unter `Backup/raspi5nas/pcloud-archive-indexes/` — **nicht** `pool_index.sqlite3` (siehe `excludes.txt`).
 
-**Pipeline-Manifeste (Backup-HDD, optional):** `pcloud_manifests_usb_backup.sh` + `pcloud-manifests-backup.service` (Pfade als `Environment=` in der Unit, nach `/etc/systemd/system/` kopieren) + `.timer` (22:15). Ziel **außerhalb** `/srv/nas`. Kein Ersatz für Master-Index auf pCloud.
+**Pipeline-Manifeste (Backup-HDD, optional):** `pcloud_manifests_usb_backup.sh` + `pcloud-manifests-backup.service` (Pfade als `Environment=` in der Unit, nach `/etc/systemd/system/` kopieren) + `.timer` (10:30, 22:15). Ziel **außerhalb** `/srv/nas`. Kein Ersatz für Master-Index auf pCloud.
 
 Das Wrapper-Log zeigt beim Start:
 ```

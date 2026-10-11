@@ -7,7 +7,7 @@
 # (unter /etc/systemd/system/ nach git pull kopieren)
 #
 # Erster Lauf: volle ~7 GB. Danach: meist 1 neues JSON pro Backup-Tag (~80 MB).
-# Timer: pcloud-manifests-backup.timer (Standard 22:15, nach 20:00-Pipeline-Slot).
+# Timer: pcloud-manifests-backup.timer (10:30 + 22:15).
 # =============================================================================
 set -euo pipefail
 

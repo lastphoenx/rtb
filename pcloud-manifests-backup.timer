@@ -2,7 +2,8 @@
 Description=USB-Spiegel für /srv/pcloud-archive/manifests (täglich nach Pipeline)
 
 [Timer]
-# Nach 20:00-Backup-Slot; Persistent=true holt verpasste Läufe nach
+# 10:30 Puffer nach 04:00-RTB/Pipeline (kann mehrere Stunden dauern); 22:15 nach 20:00
+OnCalendar=*-*-* 10:30:00
 OnCalendar=*-*-* 22:15:00
 Persistent=true
 Unit=pcloud-manifests-backup.service
