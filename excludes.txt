@@ -49,6 +49,8 @@ venv/
 /pcloud-archive/indexes/pool_index_gc.sqlite3-wal
 /pcloud-archive/indexes/pool_index_gc.sqlite3-shm
 /pcloud-archive/indexes/pool_index*.sqlite3*
+/pcloud-archive/indexes/pool_index.sqlite3.bak*
+/pcloud-archive/indexes/pool_index_gc.sqlite3.bak*
 /pcloud-archive/indexes/*.bak
 /pcloud-archive/indexes/content_index_master.json.bak*
 /pcloud-archive/indexes/staging/
@@ -61,6 +63,8 @@ pool_index.sqlite3-shm
 pool_index_gc.sqlite3-wal
 pool_index_gc.sqlite3-shm
 pool_index*.sqlite3*
+pool_index.sqlite3.bak*
+pool_index_gc.sqlite3.bak*
 *.bak
 content_index_master.json.bak*
 staging/
