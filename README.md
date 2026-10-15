@@ -260,8 +260,9 @@ __pycache__/  *.py[cod]  **/._*
 /pcloud-temp/      pcloud-temp/
 /Backup/pbs2/      Backup/pbs2/     (PBS-Replik, täglich 03:00)
 /Backup/pve2/      Backup/pve2/     (vzdump-Replik)
+/XWiki/            XWiki/           (Live-NFS; DR nur unter Backup/XWiki/)
 ```
-→ Änderungen dort **triggern kein Backup** allein, werden aber **mitgesichert**, wenn z. B. Paperless ein Backup auslöst.
+→ Änderungen dort **triggern kein Backup** allein. PBS/pve2 werden **mitgesichert**, wenn z. B. Paperless ein Backup auslöst. **`XWiki/`** ist in `excludes.txt` (Schicht A) — wird **nicht** ins RTB kopiert; **`Backup/XWiki/`** bleibt die Offsite-Kopie.
 
 **Signature Sub-Buckets:** Unter `Backup/` werden Buckets als `Backup/<name>` gezählt (nicht ein aggregierter `Backup`-Bucket), damit PBS/pve2-Noise Config-Backups (`Backup/Paperless`, …) nicht maskiert.
 

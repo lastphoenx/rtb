@@ -18,6 +18,8 @@ RTB_TRIGGER_ONLY_PATTERNS=(
   '/Backup/pve2/'
   'Backup/pbs2/'
   'Backup/pve2/'
+  '/XWiki/'
+  'XWiki/'
 )
 
 # rsync --exclude-from braucht beide Formen (anchored + unanchored) — nur Pipeline-Pfade

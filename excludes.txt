@@ -38,7 +38,10 @@ venv/
 
 # pCloud indexes: content_index_master.json bleibt im RTB (Restore + pCloud-Remote-Master).
 # SQLite-Arbeits-DBs + .bak: nur SSD2 — rebuild aus Master in ~20–30 min (pcloud-tools POOL_INDEX_DB.md).
+# indexes/staging/: Export-Scratch (content_index_pending.json) vor Chunk-Upload — nicht Offsite.
 # Trigger: pcloud-archive triggert kein RTB allein (rtb_check_excludes.sh); Mitbackup nur Master-JSON.
+#
+# Anchored (Vollbaum / rtb_staged unit paths ab /srv/nas):
 /pcloud-archive/indexes/pool_index.sqlite3
 /pcloud-archive/indexes/pool_index_gc.sqlite3
 /pcloud-archive/indexes/pool_index.sqlite3-wal
@@ -48,6 +51,24 @@ venv/
 /pcloud-archive/indexes/pool_index*.sqlite3*
 /pcloud-archive/indexes/*.bak
 /pcloud-archive/indexes/content_index_master.json.bak*
+/pcloud-archive/indexes/staging/
+#
+# Unanchored (Staged-Unit rsync: Quelle …/pcloud-archive/indexes/ — Pfade ohne Präfix):
+pool_index.sqlite3
+pool_index_gc.sqlite3
+pool_index.sqlite3-wal
+pool_index.sqlite3-shm
+pool_index_gc.sqlite3-wal
+pool_index_gc.sqlite3-shm
+pool_index*.sqlite3*
+*.bak
+content_index_master.json.bak*
+staging/
+content_index_pending.json
+
+# XWiki Live-NFS (Primärspeicher auf NAS) — DR: Backup/XWiki/ (CT 138 backup.sh, 03:30).
+# Live-Baum ändert sich ständig (Solr, store/file) → kein RTB, kein Trigger (rtb_check_excludes.sh).
+/XWiki/
 
 # macOS AppleDouble-Metadaten (nicht sichern — reduziert Pool/pCloud-Noise)
 **/._*
