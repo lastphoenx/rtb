@@ -63,12 +63,24 @@ def unit_row(
     }
 
 
+def _pbs_bytes(units: list[dict[str, Any]]) -> int:
+    total = 0
+    for u in units:
+        if u.get("status") != "ok":
+            continue
+        unit = (u.get("unit") or "").strip()
+        if unit == "Backup/pbs2" or unit.startswith("Backup/pbs2/"):
+            total += int(u.get("bytes_transferred", 0))
+    return total
+
+
 def aggregate_summary(snapshot: str, units: list[dict[str, Any]]) -> dict[str, Any]:
     synced = [u for u in units if u.get("status") == "ok"]
     skipped = [u for u in units if u.get("status") == "skipped"]
     total_files = sum(int(u.get("files_transferred", 0)) for u in synced)
     total_bytes = sum(int(u.get("bytes_transferred", 0)) for u in synced)
     active = [u for u in synced if int(u.get("files_transferred", 0)) > 0]
+    pbs_bytes = _pbs_bytes(units)
     return {
         "kind": "backup_summary",
         "snapshot": snapshot,
@@ -78,6 +90,7 @@ def aggregate_summary(snapshot: str, units: list[dict[str, Any]]) -> dict[str, A
         "units_changed": len(active),
         "files_transferred": total_files,
         "bytes_transferred": total_bytes,
+        "pbs_bytes_transferred": pbs_bytes,
         "units": units,
     }
 
@@ -120,6 +133,12 @@ def main() -> int:
     parser.add_argument("--status", default="ok", choices=("ok", "skipped"))
     parser.add_argument("--aggregate", action="store_true", help="Read unit JSON lines from stdin")
     parser.add_argument("--snapshot", default="", help="Snapshot directory name")
+    parser.add_argument(
+        "--write-to",
+        default="",
+        metavar="PATH",
+        help="Write aggregate summary JSON to PATH (with --aggregate)",
+    )
     args = parser.parse_args()
 
     if args.parse_stats_file:
@@ -145,6 +164,14 @@ def main() -> int:
             units.append(json.loads(line))
         summary = aggregate_summary(args.snapshot, units)
         emit_log_lines(summary)
+        if args.write_to:
+            try:
+                with open(args.write_to, "w", encoding="utf-8") as fh:
+                    json.dump(summary, fh, ensure_ascii=False, indent=2)
+                    fh.write("\n")
+            except OSError as exc:
+                print(f"rtb_backup_summary: cannot write {args.write_to}: {exc}", file=sys.stderr)
+                return 2
         return 0
 
     if args.unit:

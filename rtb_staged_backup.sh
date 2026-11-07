@@ -461,7 +461,8 @@ fn_log_info "Backup completed without errors."
 fn_log_info "latest -> $(basename "$DEST")"
 
 if [[ ${#SUMMARY_JSON_LINES[@]} -gt 0 && -n "$PYTHON3" ]]; then
-  printf '%s\n' "${SUMMARY_JSON_LINES[@]}" | "$PYTHON3" "$RTB_SCRIPT_DIR/rtb_backup_summary.py" --aggregate --snapshot "$(basename "$DEST")"
+  printf '%s\n' "${SUMMARY_JSON_LINES[@]}" | "$PYTHON3" "$RTB_SCRIPT_DIR/rtb_backup_summary.py" \
+    --aggregate --snapshot "$(basename "$DEST")" --write-to "$DEST/.rtb_backup_summary.json"
 elif [[ ${#SUMMARY_JSON_LINES[@]} -gt 0 ]]; then
   fn_log_warn "python3 nicht gefunden — BackupSummary übersprungen"
 fi
