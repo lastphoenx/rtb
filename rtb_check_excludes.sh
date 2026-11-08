@@ -178,7 +178,12 @@ rtb_scope_json_has_user_delta() {
   [[ -n "$scope_json" ]] || return 1
   echo "$scope_json" | python3 -c "
 import json, sys
-skip_top = {'pcloud-archive', 'pcloud-temp', '.'}
+skip_top = {
+    'pcloud-archive', 'pcloud-temp', '.',
+    'rtb_backup_summary.json', '.rtb_backup_summary.json',
+    'rtb_staged_done', '.rtb_staged_done',
+    'rtb_staged_active', '.rtb_staged_active',
+}
 skip_prefixes = ('Backup/pbs2', 'Backup/pve2')
 d = json.load(sys.stdin)
 n = 0

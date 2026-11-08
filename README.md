@@ -271,7 +271,7 @@ __pycache__/  *.py[cod]  **/._*
 .rtb_staged_done   .rtb_staged_active   .rtb_backup_summary.json
 (bzw. rtb_staged_done / rtb_backup_summary.json nach lstrip)
 ```
-→ Resume-Marker und Metrik-JSON im **Snapshot-Root** (`rtb_staged_backup.sh`); existieren nicht auf `/srv/nas`. Ohne Ignore würde jeder erfolgreiche Staged-Lauf fälschlich `changes_detected` melden.
+→ Resume-Marker und Metrik-JSON im **Snapshot-Root** (`rtb_staged_backup.sh`); existieren nicht auf `/srv/nas`. Ohne Ignore würde jeder erfolgreiche Staged-Lauf fälschlich `changes_detected` melden (auch via **Backup-Scope** / `--check-only`).
 
 **Architektur-Regeln (August 2026, verbindlich):**
 

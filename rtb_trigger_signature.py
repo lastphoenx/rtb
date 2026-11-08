@@ -93,6 +93,22 @@ def path_excluded(rel: str, patterns: Iterable[str]) -> bool:
     return any(matches_exclude(rel, pat) for pat in patterns)
 
 
+def is_signature_artifact_bucket(bucket: str) -> bool:
+    """Bucket keys for snapshot-root artefacts (not live under /srv/nas)."""
+    b = bucket.lstrip("./")
+    if not b:
+        return False
+    for pat in RTB_SIGNATURE_IGNORE_PATTERNS:
+        p = pat.lstrip("./")
+        if b == p or fnmatch.fnmatch(b, p):
+            return True
+    return False
+
+
+def _drop_artifact_buckets(names: list[str]) -> list[str]:
+    return [n for n in names if not is_signature_artifact_bucket(n)]
+
+
 @dataclass(frozen=True)
 class FileSig:
     size: int
@@ -377,6 +393,8 @@ def main() -> int:
     src_stats, files_src = walk_bucket_stats(args.src, excludes)
     snap_stats, files_snap = walk_bucket_stats(args.snapshot, excludes)
     dirty_real, dirty_pipeline = diff_buckets(src_stats, snap_stats, trigger_only)
+    dirty_real = _drop_artifact_buckets(dirty_real)
+    dirty_pipeline = _drop_artifact_buckets(dirty_pipeline)
 
     src_index = walk_file_index(args.src, excludes)
     snap_index = walk_file_index(args.snapshot, excludes)
