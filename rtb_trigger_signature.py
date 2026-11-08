@@ -20,14 +20,16 @@ if _SCRIPT_DIR not in sys.path:
 from rtb_buckets import bucket_dir_rows, bucket_display_path, top_bucket  # noqa: E402
 from rtb_check_only_delta import RTB_TRIGGER_ONLY_DEFAULTS, is_trigger_only_path  # noqa: E402
 
-# Staged-RTB resume markers: only in snapshot root (rtb_staged_backup.sh), never on live /srv/nas.
-# Ignored in signature walks — same idea as pcloud-archive (pipeline artefact), but snapshot-only.
+# Staged-RTB artefacts: only in snapshot root (rtb_staged_backup.sh), never on live /srv/nas.
+# Ignored in signature walks — otherwise snap-only files look like drift vs /srv/nas.
 # Note: path_excluded()/top_bucket() use lstrip("./"), so ".rtb_staged_done" becomes bucket "rtb_staged_done".
 RTB_SIGNATURE_IGNORE_PATTERNS: tuple[str, ...] = (
     ".rtb_staged_done",
     ".rtb_staged_active",
+    ".rtb_backup_summary.json",
     "rtb_staged_done",
     "rtb_staged_active",
+    "rtb_backup_summary.json",
 )
 
 

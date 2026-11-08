@@ -268,9 +268,10 @@ __pycache__/  *.py[cod]  **/._*
 
 **Schicht C: Signature-Trigger** (`rtb_trigger_signature.py` — nur `RTB_TRIGGER_MODE=signature`/`hybrid`):
 ```text
-.rtb_staged_done   .rtb_staged_active   (bzw. rtb_staged_done nach lstrip)
+.rtb_staged_done   .rtb_staged_active   .rtb_backup_summary.json
+(bzw. rtb_staged_done / rtb_backup_summary.json nach lstrip)
 ```
-→ Resume-Marker im **Snapshot-Root** (`rtb_staged_backup.sh`); existieren nicht auf `/srv/nas`. Ohne Ignore würde jeder erfolgreiche Staged-Lauf fälschlich `changes_detected` melden.
+→ Resume-Marker und Metrik-JSON im **Snapshot-Root** (`rtb_staged_backup.sh`); existieren nicht auf `/srv/nas`. Ohne Ignore würde jeder erfolgreiche Staged-Lauf fälschlich `changes_detected` melden.
 
 **Architektur-Regeln (August 2026, verbindlich):**
 

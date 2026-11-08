@@ -113,7 +113,7 @@ if excl:
         pass
 print(json.dumps({
     "trigger_only": canonical,
-    "signature_ignore": [".rtb_staged_done", ".rtb_staged_active", "rtb_staged_done", "rtb_staged_active"],
+    "signature_ignore": [".rtb_staged_done", ".rtb_staged_active", ".rtb_backup_summary.json", "rtb_staged_done", "rtb_staged_active", "rtb_backup_summary.json"],
     "never_backup": never,
 }, ensure_ascii=False))
 PY
